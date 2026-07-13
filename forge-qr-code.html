@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Forge Peptides — QR Code</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d0d; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 32px; padding: 40px 20px;
+    }
+    h1 { color: #FF6A00; font-size: 1.4rem; font-weight: 800; letter-spacing: 0.04em; }
+    p  { color: #888; font-size: 0.9rem; }
+
+    #preview {
+      background: #fff; border-radius: 16px; padding: 32px;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      box-shadow: 0 0 40px rgba(255,106,0,0.15);
+    }
+    #qr-container { line-height: 0; }
+    #qr-container img, #qr-container canvas { border-radius: 4px; }
+
+    .brand-label {
+      color: #1a1a1a; font-size: 1rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .brand-url {
+      color: #FF6A00; font-size: 0.78rem; font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    .controls { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+    .btn {
+      padding: 14px 32px; border-radius: 10px; border: none;
+      font-weight: 700; font-size: 1rem; cursor: pointer;
+      background: linear-gradient(135deg, #c44d00, #FF6A00);
+      color: #fff; transition: opacity 0.15s; letter-spacing: 0.04em;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-outline {
+      background: transparent; border: 1px solid rgba(255,106,0,0.4);
+      color: #FF6A00; padding: 10px 24px; font-size: 0.88rem;
+    }
+
+    .size-note { color: #555; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+  <div>
+    <h1>Forge Peptides — QR Code Generator</h1>
+    <p style="margin-top:6px;">Encodes: https://theforgepeptides.com</p>
+  </div>
+
+  <div id="preview">
+    <div id="qr-container"></div>
+    <div class="brand-label">The Forge Peptides</div>
+    <div class="brand-url">theforgepeptides.com</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" onclick="downloadPNG()">⬇ Download PNG (Print Ready)</button>
+    <button class="btn btn-outline" onclick="downloadSVG()">⬇ Download SVG (Vector)</button>
+    <div class="size-note">PNG exports at 1800×1800px — suitable for large-format printing</div>
+  </div>
+
+<script>
+const URL     = 'https://theforgepeptides.com';
+const QR_SIZE = 400; // preview size in px
+
+// Generate QR code in preview
+const qr = new QRCode(document.getElementById('qr-container'), {
+  text:          URL,
+  width:         QR_SIZE,
+  height:        QR_SIZE,
+  colorDark:     '#1a1a1a',
+  colorLight:    '#ffffff',
+  correctLevel:  QRCode.CorrectLevel.H, // highest error correction — good for banners
+});
+
+// ── Download PNG ──────────────────────────────────────────────────────────────
+function downloadPNG() {
+  const EXPORT_SIZE = 1800;
+  const PADDING     = 120;
+  const QR_EXPORT   = EXPORT_SIZE - PADDING * 2;
+
+  const canvas  = document.createElement('canvas');
+  canvas.width  = EXPORT_SIZE;
+  canvas.height = EXPORT_SIZE;
+  const ctx     = canvas.getContext('2d');
+
+  // White background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, EXPORT_SIZE, EXPORT_SIZE);
+
+  // Draw QR code — grab from the preview canvas/img
+  const qrCanvas = document.querySelector('#qr-container canvas');
+  const qrImg    = document.querySelector('#qr-container img');
+
+  function drawQR(source) {
+    ctx.drawImage(source, PADDING, PADDING, QR_EXPORT, QR_EXPORT);
+
+    // Brand text below QR
+    const textY = PADDING + QR_EXPORT + 48;
+    ctx.fillStyle    = '#1a1a1a';
+    ctx.font         = 'bold 52px -apple-system, BlinkMacSystemFont, Arial, sans-serif';
+    ctx.textAlign    = 'center';
+    ctx.letterSpacing = '6px';
+    ctx.fillText('THE FORGE PEPTIDES', EXPORT_SIZE / 2, textY);
+
+    ctx.fillStyle = '#FF6A00';
+    ctx.font      = '34px -apple-system, BlinkMacSystemFont, Arial, sans-serif';
+    ctx.fillText('theforgepeptides.com', EXPORT_SIZE / 2, textY + 52);
+
+    // Download
+    const link = document.createElement('a');
+    link.download = 'forge-peptides-qr.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  if (qrCanvas) {
+    drawQR(qrCanvas);
+  } else if (qrImg) {
+    const img = new Image();
+    img.onload = () => drawQR(img);
+    img.src = qrImg.src;
+  }
+}
+
+// ── Download SVG ──────────────────────────────────────────────────────────────
+// Build a clean vector SVG from the QR matrix for infinite scalability
+function downloadSVG() {
+  // Re-generate QR matrix using a temp hidden div
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:absolute;left:-9999px;';
+  document.body.appendChild(tmp);
+
+  const tmpQR = new QRCode(tmp, {
+    text:         URL,
+    width:        500,
+    height:       500,
+    colorDark:    '#1a1a1a',
+    colorLight:   '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H,
+  });
+
+  setTimeout(() => {
+    const tmpCanvas = tmp.querySelector('canvas');
+    if (!tmpCanvas) { document.body.removeChild(tmp); return; }
+
+    const size    = tmpCanvas.width;
+    const ctx     = tmpCanvas.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, size, size);
+    const data    = imgData.data;
+
+    // Detect module size (first dark run from top-left)
+    let moduleSize = 1;
+    for (let x = 0; x < size; x++) {
+      const idx = (0 * size + x) * 4;
+      if (data[idx] > 128) { moduleSize = x; break; }
+    }
+    if (moduleSize < 1) moduleSize = 1;
+
+    const modules = Math.round(size / moduleSize);
+    const pad     = 80;
+    const cell    = 20;
+    const qrPx    = modules * cell;
+    const svgW    = qrPx + pad * 2;
+    const svgH    = qrPx + pad * 2 + 120;
+
+    let rects = '';
+    for (let row = 0; row < modules; row++) {
+      for (let col = 0; col < modules; col++) {
+        const px  = Math.floor(col * moduleSize + moduleSize / 2);
+        const py  = Math.floor(row * moduleSize + moduleSize / 2);
+        const idx = (py * size + px) * 4;
+        if (data[idx] < 128) { // dark module
+          rects += `<rect x="${pad + col * cell}" y="${pad + row * cell}" width="${cell}" height="${cell}" fill="#1a1a1a"/>`;
+        }
+      }
+    }
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}">
+  <rect width="${svgW}" height="${svgH}" fill="#ffffff"/>
+  ${rects}
+  <text x="${svgW/2}" y="${pad + qrPx + 55}" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1a1a1a" text-anchor="middle" letter-spacing="4">THE FORGE PEPTIDES</text>
+  <text x="${svgW/2}" y="${pad + qrPx + 95}" font-family="Arial, sans-serif" font-size="20" fill="#FF6A00" text-anchor="middle">theforgepeptides.com</text>
+</svg>`;
+
+    document.body.removeChild(tmp);
+
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const link = document.createElement('a');
+    link.download = 'forge-peptides-qr.svg';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  }, 300);
+}
+</script>
+
+</body>
+</html>

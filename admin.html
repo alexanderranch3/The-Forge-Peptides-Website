@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Forge Peptides — Order Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    }
+    .login-box {
+      background: #1a1a1a; border: 1px solid rgba(255,106,0,0.25); border-radius: 12px;
+      padding: 40px; width: 340px; text-align: center;
+    }
+    .login-box h1 { color: #FF6A00; font-size: 1.4rem; margin-bottom: 6px; }
+    .login-box p  { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
+    .login-box input {
+      width: 100%; padding: 12px 14px; background: #111; border: 1px solid rgba(255,106,0,0.2);
+      border-radius: 8px; color: #fff; font-size: 1rem; outline: none; margin-bottom: 12px;
+    }
+    .login-box input:focus { border-color: rgba(255,106,0,0.55); }
+    .login-box button {
+      width: 100%; padding: 12px; background: linear-gradient(135deg,#c44d00,#FF6A00);
+      color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;
+    }
+    #login-error { color: #dc3545; font-size: 0.82rem; margin-top: 10px; display: none; }
+
+    /* ── Dashboard ── */
+    #dashboard { display: none; padding: 28px; max-width: 1400px; margin: 0 auto; }
+
+    .dash-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+    }
+    .dash-header h1 { color: #FF6A00; font-size: 1.5rem; font-weight: 800; }
+    .dash-header .meta { color: #555; font-size: 0.82rem; }
+
+    .controls {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center;
+    }
+    .btn {
+      padding: 9px 16px; border-radius: 8px; border: none; font-weight: 600;
+      font-size: 0.85rem; cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: linear-gradient(135deg,#c44d00,#FF6A00); color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid rgba(255,106,0,0.4); color: #FF6A00; }
+    .btn-sm { padding: 6px 11px; font-size: 0.78rem; }
+    .btn-green  { background: #198754; color: #fff; }
+    .btn-copy   { background: #2a2a2a; border: 1px solid #333; color: #ccc; }
+
+    select.filter-select {
+      padding: 9px 12px; background: #1a1a1a; border: 1px solid rgba(255,106,0,0.2);
+      border-radius: 8px; color: #fff; font-size: 0.85rem; outline: none; cursor: pointer;
+    }
+
+    /* Stats bar */
+    .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-card {
+      background: #1a1a1a; border: 1px solid rgba(255,106,0,0.12); border-radius: 10px;
+      padding: 14px 20px; min-width: 130px;
+    }
+    .stat-card .label { color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat-card .value { color: #FF6A00; font-size: 1.5rem; font-weight: 800; margin-top: 4px; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid rgba(255,106,0,0.1); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th {
+      background: #1a1a1a; color: #FF6A00; text-transform: uppercase; letter-spacing: 0.07em;
+      font-size: 0.72rem; padding: 12px 14px; text-align: left; white-space: nowrap;
+      border-bottom: 1px solid rgba(255,106,0,0.15);
+    }
+    td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,106,0,0.03); }
+
+    .cb { width: 16px; height: 16px; accent-color: #FF6A00; cursor: pointer; }
+
+    /* Status badges */
+    .badge {
+      display: inline-block; padding: 3px 9px; border-radius: 20px;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap;
+    }
+    .badge-sent      { background: rgba(255,193,7,0.15);  color: #ffc107; }
+    .badge-paid      { background: rgba(25,135,84,0.15);  color: #28a745; }
+    .badge-partial   { background: rgba(13,202,240,0.15); color: #0dcaf0; }
+    .badge-canceled  { background: rgba(220,53,69,0.15);  color: #dc3545; }
+    .badge-other     { background: rgba(108,117,125,0.15);color: #6c757d; }
+    .badge-pickup    { background: rgba(111,66,193,0.15); color: #a88ef7; }
+
+    .fulfillment { font-size: 0.75rem; color: #888; margin-top: 3px; }
+    .items-list  { color: #ccc; line-height: 1.6; }
+    .items-list .qty { color: #FF6A00; font-weight: 700; }
+    .amount { color: #fff; font-weight: 700; }
+    .shipping-amt { color: #888; font-size: 0.8rem; }
+
+    .addr-block { color: #ddd; line-height: 1.5; font-size: 0.83rem; }
+    .addr-block .name { color: #fff; font-weight: 600; }
+    .addr-block .email { color: #888; font-size: 0.78rem; }
+
+    .no-orders { text-align: center; padding: 60px 20px; color: #444; font-size: 1rem; }
+    .loading   { text-align: center; padding: 60px 20px; color: #666; }
+
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; background: #1a1a1a;
+      border: 1px solid rgba(255,106,0,0.4); color: #fff; padding: 12px 20px;
+      border-radius: 8px; font-size: 0.85rem; opacity: 0; transition: opacity 0.2s;
+      pointer-events: none; z-index: 9999;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login Screen ── -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🔥 Forge Admin</h1>
+    <p>Order dashboard — private access only</p>
+    <input id="pw-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')login()"/>
+    <button onclick="login()">Enter Dashboard</button>
+    <div id="login-error">Incorrect password</div>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div id="dashboard">
+  <div class="dash-header">
+    <div>
+      <h1>🔥 Order Dashboard</h1>
+      <div class="meta" id="last-updated"></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <select class="filter-select" id="days-select" onchange="loadOrders()">
+        <option value="30">Last 30 days</option>
+        <option value="60" selected>Last 60 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <button class="btn btn-outline" onclick="loadOrders()">↺ Refresh</button>
+      <button class="btn btn-primary" onclick="exportCSV()">⬇ Export Pirate Ship CSV</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Awaiting Zelle</div>
+      <div class="value" id="stat-sent">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Ready to Ship</div>
+      <div class="value" id="stat-paid">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Orders</div>
+      <div class="value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Revenue (shown)</div>
+      <div class="value" id="stat-revenue">—</div>
+    </div>
+  </div>
+
+  <!-- Filter controls -->
+  <div class="controls">
+    <select class="filter-select" id="status-filter" onchange="renderTable()">
+      <option value="ALL">All Statuses</option>
+      <option value="AWAITING">Awaiting Zelle</option>
+      <option value="PAID">Paid — Ready to Ship</option>
+      <option value="PARTIALLY_PAID">Partially Paid</option>
+    </select>
+    <select class="filter-select" id="fulfillment-filter" onchange="renderTable()">
+      <option value="ALL">All Fulfillments</option>
+      <option value="SHIP">Ship Only</option>
+      <option value="LOCAL_PICKUP">Local Pickup Only</option>
+    </select>
+    <label style="color:#888;font-size:0.82rem;display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" id="select-all" style="accent-color:#FF6A00;" onchange="toggleSelectAll(this.checked)">
+      Select all visible
+    </label>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <div id="table-loading" class="loading">Loading orders…</div>
+    <table id="orders-table" style="display:none;">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th>Date</th>
+          <th>Order #</th>
+          <th>Status</th>
+          <th>Customer</th>
+          <th>Ship To</th>
+          <th>Items</th>
+          <th>Total</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body"></tbody>
+    </table>
+    <div id="no-orders" class="no-orders" style="display:none;">No orders found for this period.</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = 'forge2024'; // Change this to whatever you want
+
+// Pirate Ship CSV package defaults (matches your typical order)
+const PKG_WEIGHT_OZ = 5;
+const PKG_LENGTH    = 6;
+const PKG_WIDTH     = 4;
+const PKG_HEIGHT    = 3;
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+function login() {
+  const pw = document.getElementById('pw-input').value;
+  if (pw === ADMIN_PASSWORD) {
+    sessionStorage.setItem('forge_admin', '1');
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display    = 'block';
+    loadOrders();
+  } else {
+    document.getElementById('login-error').style.display = 'block';
+    document.getElementById('pw-input').value = '';
+  }
+}
+
+// Auto-login if session active
+if (sessionStorage.getItem('forge_admin') === '1') {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display    = 'block';
+}
+
+// ── Data ─────────────────────────────────────────────────────────────────────
+let allOrders = [];
+
+async function loadOrders() {
+  document.getElementById('table-loading').style.display = 'block';
+  document.getElementById('orders-table').style.display  = 'none';
+  document.getElementById('no-orders').style.display     = 'none';
+
+  const days = document.getElementById('days-select').value;
+  try {
+    const res  = await fetch(`/.netlify/functions/get-orders?days=${days}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load orders');
+    allOrders = data.orders || [];
+    updateStats();
+    renderTable();
+    document.getElementById('last-updated').textContent =
+      'Last updated: ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    document.getElementById('table-loading').textContent = 'Error: ' + err.message;
+  }
+}
+
+function updateStats() {
+  const sent    = allOrders.filter(o => o.status === 'SENT').length;
+  const paid    = allOrders.filter(o => o.status === 'PAID').length;
+  const revenue = allOrders
+    .filter(o => o.status === 'PAID')
+    .reduce((s, o) => s + o.total, 0);
+
+  document.getElementById('stat-sent').textContent    = sent;
+  document.getElementById('stat-paid').textContent    = paid;
+  document.getElementById('stat-total').textContent   = allOrders.length;
+  document.getElementById('stat-revenue').textContent = '$' + revenue.toFixed(2);
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+function renderTable() {
+  const statusF    = document.getElementById('status-filter').value;
+  const fulfillF   = document.getElementById('fulfillment-filter').value;
+
+  let orders = allOrders;
+  const awaitingStatuses = ['DRAFT', 'UNPUBLISHED', 'SENT', 'PAYMENT_PENDING'];
+  if (statusF === 'AWAITING') orders = orders.filter(o => awaitingStatuses.includes(o.status));
+  else if (statusF !== 'ALL') orders = orders.filter(o => o.status === statusF);
+  if (fulfillF !== 'ALL') orders = orders.filter(o => o.fulfillmentType === fulfillF);
+
+  document.getElementById('table-loading').style.display = 'none';
+  document.getElementById('select-all').checked = false;
+
+  if (orders.length === 0) {
+    document.getElementById('orders-table').style.display = 'none';
+    document.getElementById('no-orders').style.display    = 'block';
+    return;
+  }
+
+  document.getElementById('orders-table').style.display = 'table';
+  document.getElementById('no-orders').style.display    = 'none';
+
+  const tbody = document.getElementById('orders-body');
+  tbody.innerHTML = orders.map(order => {
+    const date = new Date(order.createdAt).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+
+    const badge = statusBadge(order.status);
+    const addr  = order.shipTo
+      ? `<div class="addr-block">
+           <div class="name">${esc(order.customerName)}</div>
+           ${esc(order.shipTo.street)}<br>
+           ${esc(order.shipTo.city)}, ${esc(order.shipTo.state)} ${esc(order.shipTo.zip)}<br>
+           <div class="email">${esc(order.customerEmail)}</div>
+         </div>`
+      : `<div class="addr-block">
+           <div class="name">${esc(order.customerName)}</div>
+           <span class="badge badge-pickup">Local Pickup</span><br>
+           <div class="email">${esc(order.customerEmail)}</div>
+         </div>`;
+
+    const items = order.items.map(i =>
+      `<span class="qty">${i.qty}×</span> ${esc(i.name)}`
+    ).join('<br>');
+
+    const addrOneLiner = order.shipTo
+      ? `${order.shipTo.street}, ${order.shipTo.city}, ${order.shipTo.state} ${order.shipTo.zip}`
+      : '';
+
+    return `
+      <tr data-id="${esc(order.invoiceId)}">
+        <td><input type="checkbox" class="cb order-cb" data-id="${esc(order.invoiceId)}"></td>
+        <td style="white-space:nowrap;color:#888;">${date}</td>
+        <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.invoiceNumber)}</td>
+        <td>${badge}${order.fulfillmentType === 'SHIP'
+          ? '<div class="fulfillment">🚚 Ship</div>'
+          : '<div class="fulfillment">📦 Pickup</div>'}</td>
+        <td>${addr}</td>
+        <td>
+          ${order.shipTo ? `
+            <div class="addr-block">${esc(addrOneLiner)}</div>
+            ${order.shippingLabel
+              ? `<div style="margin-top:4px;font-size:0.75rem;color:#FF6A00;font-weight:600;">📦 ${esc(order.shippingLabel)}</div>`
+              : ''}
+          ` : '<span style="color:#555">N/A</span>'}
+        </td>
+        <td><div class="items-list">${items}</div></td>
+        <td>
+          <div class="amount">$${order.total.toFixed(2)}</div>
+          ${order.shippingAmount > 0
+            ? `<div class="shipping-amt">Ship: $${order.shippingAmount.toFixed(2)}</div>` : ''}
+          ${order.discount > 0
+            ? `<div class="shipping-amt" style="color:#28a745;">-$${order.discount.toFixed(2)}</div>` : ''}
+          ${order.taxAmount > 0
+            ? `<div class="shipping-amt" style="color:#aaa;">Tax: $${order.taxAmount.toFixed(2)}</div>` : ''}
+        </td>
+        <td>
+          <div class="actions">
+            ${order.shipTo ? `
+              <button class="btn btn-sm btn-copy" onclick="copyAddress('${esc(addrOneLiner)}')">Copy Addr</button>
+            ` : ''}
+            <button class="btn btn-sm btn-copy" onclick="copyText('${esc(order.customerEmail)}')">Copy Email</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function statusBadge(status) {
+  const map = {
+    DRAFT:          ['badge-sent',    'Awaiting Zelle'],
+    UNPUBLISHED:    ['badge-sent',    'Awaiting Zelle'],
+    SENT:           ['badge-sent',    'Awaiting Zelle'],
+    PAID:           ['badge-paid',    'Paid ✓'],
+    PARTIALLY_PAID: ['badge-partial', 'Partial Pay'],
+    CANCELED:       ['badge-canceled','Canceled'],
+    PAYMENT_PENDING:['badge-sent',   'Processing'],
+  };
+  const [cls, label] = map[status] || ['badge-other', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.order-cb').forEach(cb => cb.checked = checked);
+}
+
+function getSelectedOrders() {
+  const selectedIds = new Set(
+    [...document.querySelectorAll('.order-cb:checked')].map(cb => cb.dataset.id)
+  );
+  return selectedIds.size > 0
+    ? allOrders.filter(o => selectedIds.has(o.invoiceId))
+    : allOrders.filter(o => o.fulfillmentType === 'SHIP'); // default: all shippable
+}
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const orders = getSelectedOrders().filter(o => o.shipTo);
+  if (orders.length === 0) {
+    showToast('No shipping orders to export. Select orders with a ship-to address.');
+    return;
+  }
+
+  // Pirate Ship CSV columns
+  const headers = [
+    'Name','Company','Street1','Street2','City','State','Zip','Country',
+    'Phone','Email','Weight (oz)','Length','Width','Height',
+    'Package Type','Reference 1','Reference 2'
+  ];
+
+  const rows = orders.map(o => [
+    o.customerName,
+    '',                          // Company
+    o.shipTo.street,
+    '',                          // Street2
+    o.shipTo.city,
+    o.shipTo.state,
+    o.shipTo.zip,
+    o.shipTo.country || 'US',
+    o.customerPhone || '',
+    o.customerEmail || '',
+    PKG_WEIGHT_OZ,
+    PKG_LENGTH,
+    PKG_WIDTH,
+    PKG_HEIGHT,
+    'Package',
+    o.invoiceNumber,             // Reference 1 = order number
+    o.items.map(i => `${i.qty}x ${i.name}`).join('; '), // Reference 2 = items
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `forge-orders-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  showToast(`Exported ${orders.length} order${orders.length !== 1 ? 's' : ''} to CSV`);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function copyAddress(addr) {
+  copyText(addr);
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Copied to clipboard');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Copied to clipboard');
+  });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Load on page visit if already logged in
+if (sessionStorage.getItem('forge_admin') === '1') loadOrders();
+</script>
+</body>
+</html>
