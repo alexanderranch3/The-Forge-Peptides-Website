@@ -215,7 +215,8 @@
 
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
-const ADMIN_PASSWORD = 'forge2024'; // Change this to whatever you want
+// Admin password is validated server-side by netlify/functions/admin-auth.js
+// against the ADMIN_PASSWORD env var — no password is stored in this file.
 
 // Pirate Ship CSV package defaults (matches your typical order)
 const PKG_WEIGHT_OZ = 5;
@@ -224,16 +225,29 @@ const PKG_WIDTH     = 4;
 const PKG_HEIGHT    = 3;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-function login() {
-  const pw = document.getElementById('pw-input').value;
-  if (pw === ADMIN_PASSWORD) {
-    sessionStorage.setItem('forge_admin', '1');
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display    = 'block';
-    loadOrders();
-  } else {
-    document.getElementById('login-error').style.display = 'block';
-    document.getElementById('pw-input').value = '';
+async function login() {
+  const pw    = document.getElementById('pw-input').value;
+  const error = document.getElementById('login-error');
+  error.style.display = 'none';
+  try {
+    const res = await fetch('/.netlify/functions/admin-auth', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ password: pw }),
+    });
+    if (res.ok) {
+      sessionStorage.setItem('forge_admin', '1');
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display    = 'block';
+      loadOrders();
+    } else {
+      error.textContent   = 'Incorrect password';
+      error.style.display = 'block';
+      document.getElementById('pw-input').value = '';
+    }
+  } catch (err) {
+    error.textContent   = 'Login failed — try again';
+    error.style.display = 'block';
   }
 }
 
