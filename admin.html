@@ -236,7 +236,8 @@ async function login() {
       body:    JSON.stringify({ password: pw }),
     });
     if (res.ok) {
-      sessionStorage.setItem('forge_admin', '1');
+      const data = await res.json();
+      sessionStorage.setItem('forge_admin_token', data.token || '');
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard').style.display    = 'block';
       loadOrders();
@@ -251,8 +252,15 @@ async function login() {
   }
 }
 
-// Auto-login if session active
-if (sessionStorage.getItem('forge_admin') === '1') {
+// Return to the login screen (e.g. token missing/expired).
+function showLogin() {
+  sessionStorage.removeItem('forge_admin_token');
+  document.getElementById('dashboard').style.display    = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+// Auto-login if a token is present (validity is confirmed by the first API call).
+if (sessionStorage.getItem('forge_admin_token')) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('dashboard').style.display    = 'block';
 }
@@ -267,7 +275,10 @@ async function loadOrders() {
 
   const days = document.getElementById('days-select').value;
   try {
-    const res  = await fetch(`/.netlify/functions/get-orders?days=${days}`);
+    const res  = await fetch(`/.netlify/functions/get-orders?days=${days}`, {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (res.status === 401) { showLogin(); return; }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load orders');
     allOrders = data.orders || [];
@@ -495,7 +506,7 @@ function showToast(msg) {
 }
 
 // Load on page visit if already logged in
-if (sessionStorage.getItem('forge_admin') === '1') loadOrders();
+if (sessionStorage.getItem('forge_admin_token')) loadOrders();
 </script>
 </body>
 </html>

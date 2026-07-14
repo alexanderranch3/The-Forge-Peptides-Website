@@ -1,6 +1,8 @@
 // Netlify Function: get-orders.js
 // Fetches recent Square invoices + linked orders for the admin dashboard.
 
+const { verifyToken } = require('./_auth-token');
+
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
@@ -103,6 +105,17 @@ exports.handler = async (event) => {
 
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+  }
+
+  // Admin-only: require a valid signed token (issued by admin-auth on login).
+  const SECRET = process.env.ADMIN_TOKEN_SECRET;
+  if (!SECRET) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'ADMIN_TOKEN_SECRET not configured.' }) };
+  }
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const bearer = authHeader.replace(/^Bearer\s+/i, '');
+  if (!verifyToken(SECRET, bearer)) {
+    return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
   if (!TOKEN || !LOCATION_ID) {

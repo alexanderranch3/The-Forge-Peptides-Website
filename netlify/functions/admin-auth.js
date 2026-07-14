@@ -4,6 +4,7 @@
 // (set in the Netlify UI) — never hardcoded in this repo.
 
 const crypto = require('crypto');
+const { signToken } = require('./_auth-token');
 
 // Constant-time compare that won't throw on a length mismatch.
 function safeEqual(a, b) {
@@ -24,8 +25,9 @@ exports.handler = async (event) => {
   }
 
   const expected = process.env.ADMIN_PASSWORD;
-  if (!expected) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'ADMIN_PASSWORD not configured.' }) };
+  const secret   = process.env.ADMIN_TOKEN_SECRET;
+  if (!expected || !secret) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'ADMIN_PASSWORD / ADMIN_TOKEN_SECRET not configured.' }) };
   }
 
   let submitted = '';
@@ -36,7 +38,7 @@ exports.handler = async (event) => {
   }
 
   if (submitted && safeEqual(submitted, expected)) {
-    return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ success: true, token: signToken(secret) }) };
   }
   return { statusCode: 401, headers, body: JSON.stringify({ error: 'Incorrect password' }) };
 };
