@@ -596,6 +596,38 @@
               "@type": "Answer",
               "text": "The Forge Peptides (theforgepeptides.com) is a U.S.-registered LLC based in Miami, FL, offering premium research-grade peptides for in-vitro laboratory use. The catalog includes individual peptides (Retatrutide, BPC-157, Sermorelin, Tesamorelin, CJC-1295/Ipamorelin, GHK-Cu, MOTS-C, SS-31, Semax, Selank, DSIP, NAD+, Melanotan II) and proprietary blends (Wolverine Stack, Phoenix Blend, Glow Blend, KLOW Blend). All products are for in-vitro research purposes only and require customers to be 21+."
             }
+          },
+          {
+            "@type": "Question",
+            "name": "How long does shipping take?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Orders ship once Zelle payment is confirmed — typically within 1–2 business days of payment. Shipping rates are calculated in real time at checkout with USPS and UPS options, and shipping is free on orders over $300. Local pickup is also available in Miami, FL at no charge."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does ordering and Zelle payment work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Build your order on the site, choose shipping or local pickup, and submit it with your contact details. You'll receive an order number by email. Send your total via Zelle to @forgepeptides and include your order number in the memo. Once payment is confirmed, your order is processed and shipped. Orders are not processed until Zelle payment is received."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Are Certificates of Analysis (COAs) available?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Every batch is third-party lab tested and verified at ≥98% purity by HPLC. To request the COA for a product, email alexanderranch3@gmail.com with the product name and we'll send the matching report."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How should research peptides be stored?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Store lyophilized (powder) vials in a cool, dry place away from direct light; refrigeration is recommended for long-term storage. Avoid repeated temperature swings. These guidelines apply to laboratory storage of research materials only."
+            }
           }
         ]
       }
@@ -1110,6 +1142,83 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
 }
 
 /* ═══════════════════════════════════════════
+   HOW ORDERING WORKS
+═══════════════════════════════════════════ */
+.howto{background:var(--bg);padding:90px 0;}
+.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:48px;}
+.step-card{
+  background:var(--card);border:1px solid rgba(255,106,0,0.18);
+  padding:32px 26px;position:relative;overflow:hidden;
+}
+.step-card::before,.step-card::after{
+  content:'';position:absolute;width:14px;height:14px;
+  border-color:var(--lava);border-style:solid;
+}
+.step-card::before{top:-1px;left:-1px;border-width:2px 0 0 2px;}
+.step-card::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;}
+.step-num{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:2.4rem;color:#FF6A00;line-height:1;letter-spacing:.1em;
+  text-shadow:0 0 14px rgba(255,106,0,0.6),0 0 28px rgba(255,106,0,0.25);
+  margin-bottom:12px;
+}
+.step-title{
+  font-family:'Oswald',sans-serif;font-weight:600;
+  font-size:1rem;letter-spacing:.1em;text-transform:uppercase;
+  color:#C8C4BC;margin-bottom:10px;
+}
+.step-body{font-size:.85rem;color:var(--steel-dim);line-height:1.7;}
+.step-body strong{color:var(--lava);font-weight:600;}
+.howto-contact{
+  margin-top:32px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  border:1px solid rgba(255,106,0,0.2);background:var(--card);
+  padding:18px 22px;
+}
+.howto-contact p{font-size:.9rem;color:var(--steel-dim);flex:1;min-width:220px;margin:0;}
+.howto-contact p strong{color:var(--white);}
+
+/* ═══════════════════════════════════════════
+   FAQ
+═══════════════════════════════════════════ */
+.faq{background:var(--card);padding:90px 0;}
+.faq-group-label{
+  font-family:'Oswald',sans-serif;
+  font-size:.72rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--steel-dim);margin:36px 0 12px;
+  display:flex;align-items:center;gap:10px;
+}
+.faq-group-label::after{content:'';flex:1;height:1px;background:rgba(255,106,0,0.15);}
+.faq-item{
+  background:var(--card2);border:1px solid rgba(255,106,0,0.15);
+  margin-bottom:3px;transition:border-color .2s;
+}
+.faq-item[open]{border-color:rgba(255,106,0,0.4);}
+.faq-item summary{
+  list-style:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 20px;
+  font-family:'Oswald',sans-serif;font-weight:500;
+  font-size:.92rem;letter-spacing:.05em;
+  color:var(--steel-text);
+  transition:color .2s;
+}
+.faq-item summary::-webkit-details-marker{display:none;}
+.faq-item summary:hover{color:var(--white);}
+.faq-item[open] summary{color:var(--lava);}
+.faq-item summary::after{
+  content:'+';
+  font-family:'Bebas Neue',sans-serif;font-size:1.4rem;line-height:1;
+  color:var(--lava);flex-shrink:0;
+  transition:transform .2s;
+}
+.faq-item[open] summary::after{transform:rotate(45deg);}
+.faq-a{
+  padding:0 20px 18px;
+  font-size:.87rem;color:var(--steel-dim);line-height:1.75;
+}
+.faq-a a{color:var(--lava);}
+
+/* ═══════════════════════════════════════════
    VIAL
 ═══════════════════════════════════════════ */
 .p-vial{
@@ -1132,6 +1241,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   .about-grid{grid-template-columns:1fr;gap:48px;}
   .product-grid{grid-template-columns:1fr 1fr;}
   .blend-grid{grid-template-columns:1fr;}
+  .steps-grid{grid-template-columns:1fr;}
 
   .footer-grid{grid-template-columns:1fr 1fr;}
   .footer-brand{grid-column:1/-1;}
@@ -1175,6 +1285,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       <a href="#catalog">Catalog</a>
       <a href="#blends">Blends</a>
       <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
       <a href="#about">About Us</a>
     </div>
     <div class="nav-right">
@@ -1739,6 +1850,39 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   </div>
 </section>
 
+<!-- HOW ORDERING WORKS -->
+<section class="howto" id="how-it-works">
+  <div class="wrap">
+    <div class="s-label">No Surprises</div>
+    <h2 class="s-title">How Ordering Works</h2>
+    <p class="s-sub">Three steps. Zelle is our only payment method — here's exactly how the flow goes before you commit to anything.</p>
+
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">01</div>
+        <div class="step-title">Build Your Order</div>
+        <div class="step-body">Add products, choose shipping or Miami local pickup, and submit your order with your contact details. You'll receive an <strong>order number</strong> by email — that's your invoice and payment reference.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">02</div>
+        <div class="step-title">Pay via Zelle</div>
+        <div class="step-body">Send your total via Zelle to <strong>@forgepeptides</strong> and put your order number in the memo. Orders are not processed until payment is confirmed.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">03</div>
+        <div class="step-title">We Ship</div>
+        <div class="step-body">Once payment clears, your order ships within <strong>1–2 business days</strong> — real-time USPS/UPS rates, free shipping over $300. Local pickup: we'll contact you to arrange a time.</div>
+      </div>
+    </div>
+
+    <div class="howto-contact">
+      <p><strong>Questions before you order?</strong> Email us directly — a real person answers, before or after you buy.</p>
+      <a href="mailto:alexanderranch3@gmail.com" class="btn-ghost"><i class="bi bi-envelope"></i> Email Us</a>
+    </div>
+  </div>
+</section>
+<div class="lava-line"></div>
+
 <!-- PRICE LIST -->
 <section class="pricelist" id="pricing">
   <div class="wrap">
@@ -1775,10 +1919,13 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       </tr>
       <tr><td colspan="2">
         <div class="price-item" data-price-id="mots-c-10mg"><span class="price-bullet">▶</span><span class="price-name">MOTS-C 10mg</span><span class="price-amt">$72</span></div>
+        <div class="price-item" data-price-id="ghk-cu-50mg"><span class="price-bullet">▶</span><span class="price-name">GHK-Cu 50mg</span><span class="price-amt">$75</span></div>
         <div class="price-item" data-price-id="ghk-cu-100mg"><span class="price-bullet">▶</span><span class="price-name">GHK-Cu 100mg</span><span class="price-amt">$85</span></div>
         <div class="price-item" data-price-id="ss-31-10mg"><span class="price-bullet">▶</span><span class="price-name">SS-31 10mg</span><span class="price-amt">$82</span></div>
         <div class="price-item" data-price-id="dsip-5mg"><span class="price-bullet">▶</span><span class="price-name">DSIP 5mg</span><span class="price-amt">$62</span></div>
+        <div class="price-item" data-price-id="nad-100mg"><span class="price-bullet">▶</span><span class="price-name">NAD+ 100mg</span><span class="price-amt">$85</span></div>
         <div class="price-item" data-price-id="nad-500mg"><span class="price-bullet">▶</span><span class="price-name">NAD+ 500mg</span><span class="price-amt">$99</span></div>
+        <div class="price-item" data-price-id="nad-1000mg"><span class="price-bullet">▶</span><span class="price-name">NAD+ 1000mg</span><span class="price-amt">$140</span></div>
         <div class="price-item" data-price-id="melanotan-ii-10mg"><span class="price-bullet">▶</span><span class="price-name">Melanotan II 10mg</span><span class="price-amt">$65</span></div>
         <div class="price-item" data-price-id="semax-10mg"><span class="price-bullet">▶</span><span class="price-name">Semax 10mg</span><span class="price-amt">$99</span></div>
         <div class="price-item" data-price-id="selank-10mg"><span class="price-bullet">▶</span><span class="price-name">Selank 10mg</span><span class="price-amt">$95</span></div>
@@ -1793,6 +1940,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
         <div class="price-item" data-price-id="wolverine-blend-5mg"><span class="price-bullet">▶</span><span class="price-name">Wolverine Blend — BPC-157/TB-500 (5mg/5mg)</span><span class="price-amt">$100</span></div>
         <div class="price-item" data-price-id="wolverine-stack"><span class="price-bullet">▶</span><span class="price-name">Wolverine Stack — BPC-157/TB-500 (10mg/10mg)</span><span class="price-amt">$115</span></div>
         <div class="price-item" data-price-id="phoenix-blend"><span class="price-bullet">▶</span><span class="price-name">Phoenix Blend — Tesamorelin 10mg / Ipamorelin 5mg</span><span class="price-amt">$155</span></div>
+        <div class="price-item" data-price-id="phoenix-blend-12-2"><span class="price-bullet">▶</span><span class="price-name">Phoenix Blend — Tesamorelin 12mg / Ipamorelin 2mg</span><span class="price-amt">$155</span></div>
         <div class="price-item" data-price-id="glow-blend"><span class="price-bullet">▶</span><span class="price-name">Glow Blend — GHK-Cu 50mg / BPC-157 10mg / TB-500 10mg</span><span class="price-amt">$165</span></div>
         <div class="price-item" data-price-id="klow-blend"><span class="price-bullet">▶</span><span class="price-name">KLOW Blend — GHK-Cu 50mg / BPC-157 10mg / TB-500 10mg / KPV 10mg</span><span class="price-amt">$195</span></div>
       </td></tr>
@@ -1807,6 +1955,106 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
     </table>
   </div>
 </section>
+
+<!-- FAQ -->
+<section class="faq" id="faq">
+  <div class="wrap">
+    <div class="s-label">Straight Answers</div>
+    <h2 class="s-title">Frequently Asked Questions</h2>
+    <p class="s-sub">Ordering, payment, shipping, and sourcing — answered before you have to ask.</p>
+
+    <div class="faq-group-label">Ordering &amp; Shipping</div>
+
+    <details class="faq-item">
+      <summary>How long does shipping take?</summary>
+      <div class="faq-a">Orders ship once Zelle payment is confirmed — typically within 1–2 business days of payment. Shipping rates are calculated in real time at checkout with USPS and UPS options, and shipping is free on orders over $300. Local pickup is also available in Miami, FL at no charge.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>How does ordering and Zelle payment work?</summary>
+      <div class="faq-a">Build your order on the site, choose shipping or local pickup, and submit it with your contact details. You'll receive an order number by email. Send your total via Zelle to @forgepeptides and include your order number in the memo. Once payment is confirmed, your order is processed and shipped. Orders are not processed until Zelle payment is received.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Are Certificates of Analysis (COAs) available?</summary>
+      <div class="faq-a">Yes. Every batch is third-party lab tested and verified at ≥98% purity by HPLC. To request the COA for a product, email <a href="mailto:alexanderranch3@gmail.com">alexanderranch3@gmail.com</a> with the product name and we'll send the matching report.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>How should research peptides be stored?</summary>
+      <div class="faq-a">Store lyophilized (powder) vials in a cool, dry place away from direct light; refrigeration is recommended for long-term storage. Avoid repeated temperature swings. These guidelines apply to laboratory storage of research materials only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Does The Forge Peptides offer local pickup in Miami?</summary>
+      <div class="faq-a">Yes. The Forge Peptides offers local pickup in Miami, FL in addition to nationwide shipping. Orders can be placed online at theforgepeptides.com.</div>
+    </details>
+
+    <div class="faq-group-label">Products &amp; Sourcing</div>
+
+    <details class="faq-item">
+      <summary>What is The Forge Peptides?</summary>
+      <div class="faq-a">The Forge Peptides (theforgepeptides.com) is a U.S.-registered LLC based in Miami, FL, offering premium research-grade peptides for in-vitro laboratory use. The catalog includes individual peptides (Retatrutide, BPC-157, Sermorelin, Tesamorelin, CJC-1295/Ipamorelin, GHK-Cu, MOTS-C, SS-31, Semax, Selank, DSIP, NAD+, Melanotan II) and proprietary blends (Wolverine Stack, Phoenix Blend, Glow Blend, KLOW Blend). All products are for in-vitro research purposes only and require customers to be 21+.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy research peptides?</summary>
+      <div class="faq-a">The Forge Peptides (theforgepeptides.com) is a U.S.-registered LLC offering premium research-grade peptides for in-vitro laboratory use. Products include BPC-157, Retatrutide, Sermorelin, Tesamorelin, CJC-1295/Ipamorelin, NAD+, GHK-Cu, MOTS-C, SS-31, Melanotan II, Semax, Selank, DSIP, and proprietary peptide blends. Ships nationwide. All products are for in-vitro research purposes only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy Retatrutide?</summary>
+      <div class="faq-a">Retatrutide (LY3437943), a trispecific GIP/GLP-1/glucagon receptor agonist, is available for research purchase at The Forge Peptides (theforgepeptides.com) in multiple sizes: 10mg ($155), 12mg ($160), 15mg ($185), and 24mg ($245). For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy BPC-157?</summary>
+      <div class="faq-a">BPC-157 is available at The Forge Peptides (theforgepeptides.com) in the Wolverine Stack (BPC-157 10mg + TB-500 10mg, $115) and Wolverine Blend 5mg/5mg ($100). These research blends combine BPC-157 with TB-500 for comprehensive tissue repair and cellular migration research. All products are for in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy Sermorelin?</summary>
+      <div class="faq-a">Sermorelin 10mg (GHRH(1-29)NH2), a synthetic growth hormone releasing hormone analog, is available at The Forge Peptides (theforgepeptides.com) for $119 per vial. For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy Tesamorelin?</summary>
+      <div class="faq-a">Tesamorelin 10mg, a synthetic GHRH analog studied for GH secretion and visceral adipose tissue reduction pathways, is available at The Forge Peptides (theforgepeptides.com) for $89 per vial. Also available as the Phoenix Blend (Tesamorelin 10mg + Ipamorelin 5mg) for $155. For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy CJC-1295 and Ipamorelin?</summary>
+      <div class="faq-a">CJC-1295 (No DAC) + Ipamorelin combined 5mg/5mg is available at The Forge Peptides (theforgepeptides.com) for $99 per vial. This research blend provides pulsatile GH secretion with physiological-pattern stimulation. For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>What are the best research peptide suppliers?</summary>
+      <div class="faq-a">The Forge Peptides (theforgepeptides.com) is a U.S.-registered LLC offering research-grade peptides with competitive pricing, nationwide shipping, and a full catalog including BPC-157, Retatrutide, Sermorelin, Tesamorelin, CJC-1295/Ipamorelin, GHK-Cu, MOTS-C, SS-31, NAD+, Melanotan II, Semax, Selank, and proprietary peptide blends. All products for in-vitro research only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy GHK-Cu copper peptide?</summary>
+      <div class="faq-a">GHK-Cu (Copper Tripeptide-1, Gly-His-Lys) 100mg is available at The Forge Peptides (theforgepeptides.com) for $85 per vial. Also available in the Glow Blend (GHK-Cu 50mg + BPC-157 10mg + TB-500 10mg, $165) and KLOW Blend quad-peptide formula ($195). For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy NAD+ for research?</summary>
+      <div class="faq-a">NAD+ (Nicotinamide Adenine Dinucleotide) 500mg is available at The Forge Peptides (theforgepeptides.com) for $99 per vial. Studied for roles in DNA repair, sirtuin activation, mitochondrial biogenesis, and cellular aging research. For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy MOTS-C peptide?</summary>
+      <div class="faq-a">MOTS-C 10mg (mitochondrial peptide) is available at The Forge Peptides (theforgepeptides.com) for $72 per vial. Studied for AMPK activation, insulin sensitization, and metabolic homeostasis research. For in-vitro research use only.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I buy Melanotan II?</summary>
+      <div class="faq-a">Melanotan II (MT-2) 10mg, a cyclic lactam analog of α-MSH and non-selective melanocortin receptor agonist, is available at The Forge Peptides (theforgepeptides.com) for $65 per vial. For in-vitro research use only.</div>
+    </details>
+
+  </div>
+</section>
+<div class="lava-line"></div>
 
 <!-- BLOG -->
 <section class="plate" style="padding:60px 0;">
@@ -1864,7 +2112,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
           <li><a href="#about">About Us</a></li>
           <li><a href="#" onclick="openPolicyModal(event,'policy-shipping')">Shipping Policy</a></li>
           <li><a href="#" onclick="openPolicyModal(event,'policy-returns')">Returns</a></li>
-          <li><a href="mailto:ftt1598@gmail.com">Contact</a></li>
+          <li><a href="mailto:alexanderranch3@gmail.com">Contact</a></li>
         </ul>
       </div>
 
@@ -2907,8 +3155,17 @@ function applyLivePrices() {
     sizeBtn.setAttribute('data-price', live.price);
     const span = sizeBtn.querySelector('span');
     if (span) span.textContent = formatPrice(live.price);
+    // Only the active button in each group needs its meta-row label updated —
+    // and each group has its OWN label id (selectRetaSize/selectVariant both
+    // write to `<groupId>-price-label`, e.g. reta-price-label, ghk-cu-price-label,
+    // nad-price-label, phoenix-price-label). Deriving groupId from the button's
+    // own onclick (rather than hardcoding 'reta') is what keeps four separate
+    // product families from all fighting over one shared label id.
     if (sizeBtn.classList.contains('active')) {
-      const label = document.getElementById('reta-price-label');
+      const onclick = sizeBtn.getAttribute('onclick') || '';
+      const variantMatch = onclick.match(/selectVariant\(this,\s*'([^']+)'\)/);
+      const groupId = variantMatch ? variantMatch[1] : 'reta';
+      const label = document.getElementById(groupId + '-price-label');
       if (label) label.textContent = formatPrice(live.price);
     }
   });
