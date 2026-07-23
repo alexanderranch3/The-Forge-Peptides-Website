@@ -17,11 +17,16 @@
   <meta property="og:title"       content="The Forge Peptides | Research-Grade Peptides"/>
   <meta property="og:description" content="Premium research peptides — BPC-157, Retatrutide, Sermorelin, NAD+, GHK-Cu, custom blends and more. Fast shipping. Zelle accepted. U.S. registered LLC."/>
   <meta property="og:site_name"   content="The Forge Peptides"/>
+  <meta property="og:image"        content="https://theforgepeptides.com/assets/logo.png"/>
+  <meta property="og:image:width"  content="512"/>
+  <meta property="og:image:height" content="512"/>
+  <meta property="og:image:alt"    content="The Forge Peptides logo"/>
 
   <!-- Twitter / X Card -->
   <meta name="twitter:card"        content="summary"/>
   <meta name="twitter:title"       content="The Forge Peptides | Research-Grade Peptides"/>
   <meta name="twitter:description" content="Premium research peptides — BPC-157, Retatrutide, Sermorelin, NAD+, custom blends and more. Fast shipping. Zelle accepted."/>
+  <meta name="twitter:image"       content="https://theforgepeptides.com/assets/logo.png"/>
 
   <!-- Structured Data: Comprehensive Schema Graph -->
   <script type="application/ld+json">
@@ -600,7 +605,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Black+Ops+One&family=Oswald:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css"/>
   <style>
 /* ═══════════════════════════════════════════
@@ -622,6 +627,8 @@
   --card2:       #141414;
   --card3:       #1A1818;
   --w: 1180px;
+  --r:    2px;   /* buttons, cards, badges, tabs */
+  --r-lg: 4px;   /* modals, inputs, panels */
 }
 
 /* ═══════════════════════════════════════════
@@ -701,6 +708,18 @@ nav{
   filter:drop-shadow(0 0 10px rgba(255,106,0,0.6));
 }
 .nav-brand-text{display:none;}
+.nav-right{display:flex;align-items:center;gap:14px;}
+.nav-burger{
+  display:none;background:none;
+  border:1px solid rgba(255,106,0,0.3);border-radius:var(--r);
+  width:40px;height:36px;
+  flex-direction:column;justify-content:center;align-items:center;gap:5px;
+  cursor:pointer;padding:0;
+}
+.nav-burger span{display:block;width:18px;height:2px;background:var(--lava);transition:transform .25s,opacity .25s;}
+.nav-burger.open span:nth-child(1){transform:translateY(7px) rotate(45deg);}
+.nav-burger.open span:nth-child(2){opacity:0;}
+.nav-burger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg);}
 .nav-links{display:flex;align-items:center;gap:32px;}
 .nav-links a{
   font-family:'Oswald',sans-serif;
@@ -814,7 +833,6 @@ nav{
 .t-icon{color:var(--lava);font-size:1.15rem;line-height:1;}
 .w-icon i{font-size:1.4rem;color:var(--lava);}
 .price-cat-label i{font-size:.95rem;}
-.btn-doc i{font-size:.85rem;}
 
 /* ═══════════════════════════════════════════
    SECTION SHARED
@@ -933,19 +951,13 @@ section{padding:90px 0;}
   cursor:pointer;transition:box-shadow .2s;
 }
 .btn-cart:hover{box-shadow:0 0 18px rgba(255,106,0,0.5);}
-.btn-doc{
-  background:transparent;color:var(--steel-muted);
-  padding:10px 11px;border:1px solid rgba(255,255,255,0.07);
-  border-radius:2px;font-size:.8rem;cursor:pointer;transition:border-color .2s,color .2s;
-}
-.btn-doc:hover{border-color:rgba(255,106,0,0.35);color:var(--lava);}
 
 /* Retatrutide size selector */
 .reta-sizes{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 6px;}
 .reta-size{
   padding:6px 10px;min-width:52px;
   background:rgba(255,106,0,0.05);
-  border:1px solid rgba(255,106,0,0.2);border-radius:4px;
+  border:1px solid rgba(255,106,0,0.2);border-radius:var(--r);
   color:var(--steel-dim);cursor:pointer;
   font-family:'Oswald',sans-serif;font-size:.78rem;font-weight:600;letter-spacing:.05em;
   text-align:center;line-height:1.3;transition:all .15s;display:flex;flex-direction:column;align-items:center;
@@ -1130,7 +1142,23 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   .trust-row{flex-direction:column;}
   .trust-item{border-right:none;border-bottom:1px solid rgba(255,106,0,0.1);}
   .hero-btns,.form-row{flex-direction:column;}
-  .nav-links{display:none;}
+  .nav-burger{display:flex;}
+  .nav-cta{padding:8px 16px;font-size:.75rem;}
+  .nav-links{
+    display:none;
+    position:fixed;top:68px;left:0;right:0;
+    flex-direction:column;align-items:stretch;gap:0;
+    background:rgba(8,8,8,0.98);
+    border-bottom:1px solid rgba(255,106,0,0.3);
+    box-shadow:0 12px 24px rgba(0,0,0,0.5);
+    padding:6px 28px 14px;
+  }
+  .nav-links.open{display:flex;}
+  .nav-links a{
+    padding:13px 0;font-size:.9rem;
+    border-bottom:1px solid rgba(255,255,255,0.05);
+  }
+  .nav-links a:last-child{border-bottom:none;}
   .footer-grid{grid-template-columns:1fr;}
 }
   </style>
@@ -1141,14 +1169,19 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
 <nav>
   <div class="nav-inner">
     <a href="#" class="nav-brand">
-      <img src="./assets/logo.png" class="nav-logo-img" alt="The Forge Peptides Logo" onerror="this.style.display='none'"/>
+      <img src="./assets/logo.png" class="nav-logo-img" alt="The Forge Peptides Logo" width="54" height="54" onerror="this.style.display='none'"/>
     </a>
-    <div class="nav-links">
+    <div class="nav-links" id="nav-links">
       <a href="#catalog">Catalog</a>
       <a href="#blends">Blends</a>
       <a href="#pricing">Pricing</a>
       <a href="#about">About Us</a>
+    </div>
+    <div class="nav-right">
       <a href="#catalog" class="nav-cta">Shop Now</a>
+      <button class="nav-burger" id="nav-burger" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span><span></span><span></span>
+      </button>
     </div>
   </div>
 </nav>
@@ -1163,7 +1196,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
         <span class="eyebrow-line"></span>
         <span class="eyebrow-text">Research-Grade · COA Verified · U.S. Operated</span>
       </div>
-      <img src="./assets/logo.png" class="hero-logo" alt="The Forge Peptides" onerror="this.style.display='none'"/>
+      <img src="./assets/logo.png" class="hero-logo" alt="The Forge Peptides" width="512" height="512" fetchpriority="high" onerror="this.style.display='none'"/>
       <p class="hero-tagline">Precision compounds. <span>Verified purity.</span> No shortcuts.</p>
       <p class="hero-body">Every vial is independently third-party tested before it ships. Built for serious researchers who refuse to compromise on quality.</p>
       <div class="hero-btns">
@@ -1283,9 +1316,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="155"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="LY3437943 Triple Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="LY3437943 Triple Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Tesamorelin -->
@@ -1307,9 +1338,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="89"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="GRF(1-44)-NH2 Analog — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="GRF(1-44)-NH2 Analog — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Sermorelin -->
@@ -1331,9 +1360,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="119"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="GHRH(1-29)NH2 — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="GHRH(1-29)NH2 — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Ipamorelin 10mg -->
@@ -1354,9 +1381,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="99"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="GHS-R1a Selective Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="GHS-R1a Selective Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- MOTS-C -->
@@ -1378,9 +1403,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="72"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="Mitochondrial Peptide — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Mitochondrial Peptide — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- GHK-Cu — Multiple Sizes -->
@@ -1407,9 +1430,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="85"
             data-item-url="/"
             data-item-weight="0.05"
-            data-item-description="Copper Tripeptide-1 — 100mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Copper Tripeptide-1 — 100mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- SS-31 -->
@@ -1431,9 +1452,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="82"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="Elamipretide / MTP-131 — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Elamipretide / MTP-131 — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Semax / Selank -->
@@ -1455,9 +1474,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="95"
             data-item-url="/"
             data-item-weight="0.06"
-            data-item-description="Nootropic Research Pair — Dual vial set. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Nootropic Research Pair — Dual vial set. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Semax 10mg -->
@@ -1478,9 +1495,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="99"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="ACTH(4-10) Heptapeptide — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="ACTH(4-10) Heptapeptide — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Selank 10mg -->
@@ -1501,9 +1516,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="95"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="Synthetic Tuftsin Analog — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Synthetic Tuftsin Analog — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- DSIP -->
@@ -1525,9 +1538,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="62"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="Delta Sleep-Inducing Peptide — 5mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Delta Sleep-Inducing Peptide — 5mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- NAD+ — Multiple Sizes -->
@@ -1555,9 +1566,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="99"
             data-item-url="/"
             data-item-weight="0.07"
-            data-item-description="Nicotinamide Adenine Dinucleotide — 500mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Nicotinamide Adenine Dinucleotide — 500mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Melanotan II -->
@@ -1579,9 +1588,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="65"
             data-item-url="/"
             data-item-weight="0.03"
-            data-item-description="MT-2 Melanocortin Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="MT-2 Melanocortin Agonist — 10mg/vial. For Research Use Only.">Add to Order</button>        </div>
       </div>
 
       <!-- Reconstitution Liquid -->
@@ -1603,9 +1610,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
             data-item-price="39"
             data-item-url="/"
             data-item-weight="0.08"
-            data-item-description="Bacteriostatic Water — 30ml/vial. USP Sterile.">Add to Order</button>
-          <button class="btn-doc"><i class="bi bi-file-earmark-text"></i></button>
-        </div>
+            data-item-description="Bacteriostatic Water — 30ml/vial. USP Sterile.">Add to Order</button>        </div>
       </div>
 
     </div>
@@ -1812,10 +1817,13 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       <div class="s-label">Stay Informed</div>
       <h2 class="s-title">Researcher Updates</h2>
       <p>New compounds, restock alerts, and research notes — straight to your inbox. No spam. Unsubscribe any time.</p>
-      <div class="form-row">
-        <input type="email" class="e-in" placeholder="researcher@email.com"/>
-        <button class="e-sub">Join the List</button>
-      </div>
+      <form class="form-row" id="footer-signup-form" name="email-signup" method="POST" data-netlify="true" netlify-honeypot="bot-field" onsubmit="handleFooterSignup(event)">
+        <input type="hidden" name="form-name" value="email-signup"/>
+        <p style="display:none;"><input name="bot-field"/></p>
+        <input type="email" name="email" class="e-in" required placeholder="researcher@email.com"/>
+        <button type="submit" class="e-sub">Join the List</button>
+      </form>
+      <div id="footer-signup-done" style="display:none;color:#5BE38A;font-family:'Oswald',sans-serif;font-size:.9rem;letter-spacing:.08em;text-transform:uppercase;padding:14px 0;">✓ You're on the list — welcome to The Forge.</div>
       <div class="e-fine">For researchers 21+. By signing up you acknowledge these products are for research use only.</div>
     </div>
   </div>
@@ -1828,7 +1836,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
 
       <div class="footer-brand">
         <div style="margin-bottom:14px;">
-          <img src="./assets/logo.png" alt="The Forge Peptides" onerror="this.style.display='none'" style="height:64px;width:auto;filter:drop-shadow(0 0 10px rgba(255,106,0,0.5));"/>
+          <img src="./assets/logo.png" alt="The Forge Peptides" width="64" height="64" loading="lazy" onerror="this.style.display='none'" style="height:64px;width:auto;filter:drop-shadow(0 0 10px rgba(255,106,0,0.5));"/>
         </div>
         <p>Precision compounds. Verified purity. No shortcuts.<br/>Operated by a registered U.S. LLC.</p>
       </div>
@@ -1848,10 +1856,9 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
         <h4>Company</h4>
         <ul>
           <li><a href="#about">About Us</a></li>
-          <li><a href="#">Lab Reports</a></li>
-          <li><a href="#">Shipping Policy</a></li>
-          <li><a href="#">Returns</a></li>
-          <li><a href="#">Contact</a></li>
+          <li><a href="#" onclick="openPolicyModal(event,'policy-shipping')">Shipping Policy</a></li>
+          <li><a href="#" onclick="openPolicyModal(event,'policy-returns')">Returns</a></li>
+          <li><a href="mailto:ftt1598@gmail.com">Contact</a></li>
         </ul>
       </div>
 
@@ -1971,10 +1978,10 @@ function selectRetaSize(btn) {
 
   // Swap vial image (24mg has its own photo)
   const retaImgMap = {
-    'retatrutide-10mg': 'assets/retatrutide-vial.jpg',
-    'retatrutide-12mg': 'assets/retatrutide-vial.jpg',
-    'retatrutide-15mg': 'assets/retatrutide-vial.jpg',
-    'retatrutide-24mg': 'assets/retatrutide-24mg-vial.jpg',
+    'retatrutide-10mg': 'assets/retatrutide-vial.webp',
+    'retatrutide-12mg': 'assets/retatrutide-vial.webp',
+    'retatrutide-15mg': 'assets/retatrutide-vial.webp',
+    'retatrutide-24mg': 'assets/retatrutide-24mg-vial.webp',
   };
   const cardImg = addBtn.closest('.p-card').querySelector('img');
   if (cardImg && retaImgMap[id]) cardImg.src = retaImgMap[id];
@@ -2011,33 +2018,33 @@ function selectVariant(btn, groupId) {
 
 // Map product IDs to real vial images
 const productImages = {
-  'retatrutide-10mg':       'assets/retatrutide-vial.jpg',
-  'retatrutide-12mg':       'assets/retatrutide-vial.jpg',
-  'retatrutide-15mg':       'assets/retatrutide-vial.jpg',
-  'retatrutide-24mg':       'assets/retatrutide-24mg-vial.jpg',
-  'sermorelin-10mg':        'assets/sermorelin-vial.jpg',
-  'tesamorelin-10mg':       'assets/tesamorelin-vial.jpg',
-  'mots-c-10mg':            'assets/mots-c-vial.jpg',
-  'ghk-cu-50mg':            'assets/ghk-cu-vial.jpg',
-  'ghk-cu-100mg':           'assets/ghk-cu-vial.jpg',
-  'ss-31-10mg':             'assets/ss-31-vial.jpg',
-  'semax-selank':           'assets/semax-selank-vial.jpg',
-  'semax-10mg':             'assets/semax-selank-vial.jpg',
-  'selank-10mg':            'assets/semax-selank-vial.jpg',
-  'dsip-5mg':               'assets/dsip-vial.jpg',
-  'nad-100mg':              'assets/nad-500mg-vial.jpg',
-  'nad-500mg':              'assets/nad-500mg-vial.jpg',
-  'nad-1000mg':             'assets/nad-500mg-vial.jpg',
-  'melanotan-ii-10mg':      'assets/melanotan-ii-vial.jpg',
-  'ipamorelin-10mg':        'assets/cjc1295-ipamorelin-vial.jpg',
-  'cjc1295-ipamorelin':     'assets/cjc1295-ipamorelin-vial.jpg',
-  'reconstitution-liquid-30ml': 'assets/bac-water-30ml-vial.jpg',
-  'wolverine-stack':        'assets/wolverine-stack-vial.jpg',
-  'wolverine-blend-5mg':    'assets/wolverine-stack-5mg-vial.jpg',
-  'phoenix-blend':          'assets/phoenix-blend-vial.jpg',
-  'phoenix-blend-12-2':     'assets/phoenix-blend-vial.jpg',
-  'glow-blend':             'assets/glow-blend-vial.jpg',
-  'klow-blend':             'assets/klow-blend-vial.jpg',
+  'retatrutide-10mg':       'assets/retatrutide-vial.webp',
+  'retatrutide-12mg':       'assets/retatrutide-vial.webp',
+  'retatrutide-15mg':       'assets/retatrutide-vial.webp',
+  'retatrutide-24mg':       'assets/retatrutide-24mg-vial.webp',
+  'sermorelin-10mg':        'assets/sermorelin-vial.webp',
+  'tesamorelin-10mg':       'assets/tesamorelin-vial.webp',
+  'mots-c-10mg':            'assets/mots-c-vial.webp',
+  'ghk-cu-50mg':            'assets/ghk-cu-vial.webp',
+  'ghk-cu-100mg':           'assets/ghk-cu-vial.webp',
+  'ss-31-10mg':             'assets/ss-31-vial.webp',
+  'semax-selank':           'assets/semax-selank-vial.webp',
+  'semax-10mg':             'assets/semax-selank-vial.webp',
+  'selank-10mg':            'assets/semax-selank-vial.webp',
+  'dsip-5mg':               'assets/dsip-vial.webp',
+  'nad-100mg':              'assets/nad-500mg-vial.webp',
+  'nad-500mg':              'assets/nad-500mg-vial.webp',
+  'nad-1000mg':             'assets/nad-500mg-vial.webp',
+  'melanotan-ii-10mg':      'assets/melanotan-ii-vial.webp',
+  'ipamorelin-10mg':        'assets/cjc1295-ipamorelin-vial.webp',
+  'cjc1295-ipamorelin':     'assets/cjc1295-ipamorelin-vial.webp',
+  'reconstitution-liquid-30ml': 'assets/bac-water-30ml-vial.webp',
+  'wolverine-stack':        'assets/wolverine-stack-vial.webp',
+  'wolverine-blend-5mg':    'assets/wolverine-stack-5mg-vial.webp',
+  'phoenix-blend':          'assets/phoenix-blend-vial.webp',
+  'phoenix-blend-12-2':     'assets/phoenix-blend-vial.webp',
+  'glow-blend':             'assets/glow-blend-vial.webp',
+  'klow-blend':             'assets/klow-blend-vial.webp',
 };
 
 document.querySelectorAll('.p-card').forEach((card, i) => {
@@ -2047,7 +2054,7 @@ document.querySelectorAll('.p-card').forEach((card, i) => {
   const vialDiv = document.createElement('div');
   vialDiv.className = 'p-vial';
   if (pid && productImages[pid]) {
-    vialDiv.innerHTML = `<img src="${productImages[pid]}" alt="${name}" style="max-height:200px;max-width:100%;object-fit:contain;border-radius:8px;">`;
+    vialDiv.innerHTML = `<img src="${productImages[pid]}" alt="${name}" width="400" height="600" loading="lazy" decoding="async" style="max-height:200px;max-width:100%;width:auto;object-fit:contain;border-radius:var(--r-lg);">`;
   } else {
     vialDiv.innerHTML = buildVial(name, i);
   }
@@ -2062,7 +2069,7 @@ document.querySelectorAll('.blend-card').forEach(card => {
     const imgDiv = document.createElement('div');
     imgDiv.className = 'p-vial';
     imgDiv.style.cssText = 'margin: 0 0 20px; border-bottom: 1px solid rgba(255,106,0,0.08); padding: 20px 0 16px; display:flex; justify-content:center;';
-    imgDiv.innerHTML = `<img src="${productImages[pid]}" alt="${btn.getAttribute('data-item-name')}" style="max-height:220px;max-width:100%;object-fit:contain;border-radius:8px;">`;
+    imgDiv.innerHTML = `<img src="${productImages[pid]}" alt="${btn.getAttribute('data-item-name')}" width="400" height="600" loading="lazy" decoding="async" style="max-height:220px;max-width:100%;width:auto;object-fit:contain;border-radius:var(--r-lg);">`;
     card.insertBefore(imgDiv, card.firstChild);
   }
 });
@@ -2101,11 +2108,56 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
     });
   });
 });
+
+// ── Mobile hamburger menu ─────────────────────────────────────────
+const navBurger = document.getElementById('nav-burger');
+const navLinks  = document.getElementById('nav-links');
+navBurger.addEventListener('click', function() {
+  const open = navLinks.classList.toggle('open');
+  navBurger.classList.toggle('open', open);
+  navBurger.setAttribute('aria-expanded', open);
+  navBurger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+});
+navLinks.querySelectorAll('a').forEach(a => a.addEventListener('click', function() {
+  navLinks.classList.remove('open');
+  navBurger.classList.remove('open');
+  navBurger.setAttribute('aria-expanded', 'false');
+}));
+
+// ── Shipping & Returns policy modal ───────────────────────────────
+function openPolicyModal(e, anchorId) {
+  if (e) e.preventDefault();
+  const overlay = document.getElementById('policy-overlay');
+  overlay.style.display = 'flex';
+  if (anchorId) {
+    const el = document.getElementById(anchorId);
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
+}
+function closePolicyModal() {
+  document.getElementById('policy-overlay').style.display = 'none';
+}
+document.getElementById('policy-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closePolicyModal();
+});
+
+// ── Footer email signup (posts to the same Netlify form as the popup) ──
+function handleFooterSignup(e) {
+  e.preventDefault();
+  const form = e.target;
+  fetch('/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(new FormData(form)).toString()
+  }).catch(() => {}); // fail silently — still show confirmation
+  form.style.display = 'none';
+  document.getElementById('footer-signup-done').style.display = 'block';
+}
 </script>
 
 <!-- EMAIL SIGNUP POPUP -->
 <div id="signup-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9998;align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#141414;border:1px solid rgba(255,106,0,0.4);border-radius:14px;max-width:460px;width:100%;position:relative;overflow:hidden;box-shadow:0 0 60px rgba(255,106,0,0.12);">
+  <div style="background:#141414;border:1px solid rgba(255,106,0,0.4);border-radius:var(--r-lg);max-width:460px;width:100%;position:relative;overflow:hidden;box-shadow:0 0 60px rgba(255,106,0,0.12);">
 
     <!-- Top lava accent bar -->
     <div style="height:4px;background:linear-gradient(90deg,#c44d00,#FF6A00,#FF8C00);"></div>
@@ -2130,15 +2182,15 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
           <p style="display:none;"><input name="bot-field"></p>
 
           <input type="text" name="name" placeholder="First Name" required
-            style="width:100%;padding:13px 16px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+            style="width:100%;padding:13px 16px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='rgba(255,106,0,0.6)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
 
           <input type="email" name="email" placeholder="Email Address" required
-            style="width:100%;padding:13px 16px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+            style="width:100%;padding:13px 16px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='rgba(255,106,0,0.6)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
 
           <button type="submit"
-            style="width:100%;padding:14px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:1rem;cursor:pointer;margin-top:4px;">
+            style="width:100%;padding:14px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:1rem;cursor:pointer;margin-top:4px;">
             Claim My 10% Off
           </button>
         </form>
@@ -2151,11 +2203,11 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
         <div style="font-size:2.5rem;margin-bottom:16px;">🔥</div>
         <h3 style="color:#fff;font-size:1.3rem;font-weight:800;margin:0 0 10px;">You're in!</h3>
         <p style="color:#aaa;font-size:0.88rem;margin:0 0 20px;">Use this code at checkout:</p>
-        <div style="background:#1e1e1e;border:2px dashed rgba(255,106,0,0.5);border-radius:10px;padding:16px;margin-bottom:20px;">
+        <div style="background:#1e1e1e;border:2px dashed rgba(255,106,0,0.5);border-radius:var(--r-lg);padding:16px;margin-bottom:20px;">
           <div style="color:#FF6A00;font-size:1.6rem;font-weight:900;letter-spacing:0.08em;">FORGE10</div>
           <div style="color:#666;font-size:0.78rem;margin-top:4px;">10% off your first order</div>
         </div>
-        <button onclick="closeSignupPopup()" style="width:100%;padding:13px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.95rem;cursor:pointer;">
+        <button onclick="closeSignupPopup()" style="width:100%;padding:13px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:0.95rem;cursor:pointer;">
           Start Shopping
         </button>
       </div>
@@ -2209,13 +2261,13 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
   </div>
   <div style="display:flex;align-items:center;gap:16px;">
     <span style="color:#FF6A00;font-weight:800;font-size:1.1rem;" id="forge-bar-total">$0.00</span>
-    <button onclick="openOrderModal()" style="padding:11px 26px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;">Review Order →</button>
+    <button onclick="openOrderModal()" style="padding:11px 26px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:0.92rem;cursor:pointer;">Review Order →</button>
   </div>
 </div>
 
 <!-- ORDER MODAL -->
 <div id="forge-order-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9995;align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#141414;border:1px solid rgba(255,106,0,0.3);border-radius:14px;width:100%;max-width:700px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 0 60px rgba(255,106,0,0.1);">
+  <div style="background:#141414;border:1px solid rgba(255,106,0,0.3);border-radius:var(--r-lg);width:100%;max-width:700px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 0 60px rgba(255,106,0,0.1);">
 
     <!-- Modal Header -->
     <div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,106,0,0.12);display:flex;align-items:center;justify-content:space-between;">
@@ -2244,25 +2296,25 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <input id="forge-firstname" name="firstname" type="text" placeholder="First Name *" required
-              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
               onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
             <input id="forge-lastname" name="lastname" type="text" placeholder="Last Name *" required
-              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
               onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
           </div>
 
           <input id="forge-email" name="email" type="email" placeholder="Email Address *" required
-            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
 
           <input id="forge-phone" name="phone" type="tel" placeholder="Phone Number *" required
-            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
 
           <div>
             <label style="color:#888;font-size:0.82rem;display:block;margin-bottom:6px;">Fulfillment</label>
             <select id="forge-fulfillment" onchange="toggleAddressField()" required
-              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;cursor:pointer;">
+              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;cursor:pointer;">
               <option value="">Select fulfillment method…</option>
               <option value="Ship">Ship to My Address</option>
               <option value="Local Pickup">Local Pickup / Dropoff</option>
@@ -2271,18 +2323,18 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
 
           <div id="forge-address-wrap" style="display:none;display:flex;flex-direction:column;gap:10px;">
             <input id="forge-street" name="street" type="text" placeholder="Street Address *"
-              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+              style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
               onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
             <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;">
               <input id="forge-city" name="city" type="text" placeholder="City *"
-                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
                 onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'">
               <input id="forge-state" name="state" type="text" placeholder="State *" maxlength="2"
-                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;text-transform:uppercase;"
+                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;text-transform:uppercase;"
                 onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'"
                 oninput="renderOrderSummary()">
               <input id="forge-zip" name="zip" type="text" placeholder="ZIP *" maxlength="10"
-                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
+                style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;box-sizing:border-box;"
                 onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'"
                 oninput="onZipInput(this.value)">
             </div>
@@ -2295,24 +2347,24 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
           </div>
 
           <textarea id="forge-notes" name="notes" placeholder="Any notes or special requests (optional)" rows="2"
-            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit;"
+            style="width:100%;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit;"
             onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'"></textarea>
 
           <div style="display:flex;gap:8px;align-items:center;">
             <input id="forge-promo" type="text" placeholder="Promo code (optional)"
-              style="flex:1;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:8px;color:#fff;font-size:0.9rem;outline:none;text-transform:uppercase;box-sizing:border-box;"
+              style="flex:1;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;text-transform:uppercase;box-sizing:border-box;"
               onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'"
               oninput="this.value=this.value.toUpperCase();renderOrderSummary()">
             <span id="forge-promo-status" style="font-size:0.82rem;min-width:70px;text-align:right;"></span>
           </div>
 
-          <div style="background:rgba(255,106,0,0.06);border:1px solid rgba(255,106,0,0.15);border-radius:8px;padding:12px 14px;color:#888;font-size:0.82rem;line-height:1.5;">
+          <div style="background:rgba(255,106,0,0.06);border:1px solid rgba(255,106,0,0.15);border-radius:var(--r-lg);padding:12px 14px;color:#888;font-size:0.82rem;line-height:1.5;">
             <i class="bi bi-info-circle" style="color:#FF6A00;margin-right:6px;"></i>
             Payment is via <strong style="color:#fff;">Zelle @forgepeptides</strong> only. Include your order number in the Zelle memo. Orders process once payment is confirmed.
           </div>
 
           <button id="forge-submit-btn" type="submit"
-            style="width:100%;padding:14px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:1rem;cursor:pointer;margin-top:4px;">
+            style="width:100%;padding:14px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:1rem;cursor:pointer;margin-top:4px;">
             Place Order
           </button>
         </form>
@@ -2325,7 +2377,7 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
         <p style="color:#aaa;font-size:0.88rem;margin:0 0 20px;">Confirmation for <strong style="color:#fff;" id="forge-confirm-email"></strong> &nbsp;·&nbsp; Order <strong style="color:#FF6A00;" id="forge-invoice-num"></strong></p>
 
         <!-- Bold Zelle warning -->
-        <div style="background:rgba(255,106,0,0.12);border:2px solid #FF6A00;border-radius:10px;padding:18px 20px;margin-bottom:16px;width:100%;text-align:left;">
+        <div style="background:rgba(255,106,0,0.12);border:2px solid #FF6A00;border-radius:var(--r-lg);padding:18px 20px;margin-bottom:16px;width:100%;text-align:left;">
           <div style="color:#FF6A00;font-size:0.72rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">⚠️ Action Required — Payment Needed</div>
           <div style="color:#fff;font-size:1rem;font-weight:800;line-height:1.5;">
             YOUR ORDER WILL NOT BE PROCESSED UNTIL ZELLE PAYMENT IS RECEIVED.
@@ -2333,7 +2385,7 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
         </div>
 
         <!-- Steps -->
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:16px 20px;margin-bottom:20px;font-size:0.88rem;color:#ccc;line-height:1.8;text-align:left;width:100%;">
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--r-lg);padding:16px 20px;margin-bottom:20px;font-size:0.88rem;color:#ccc;line-height:1.8;text-align:left;width:100%;">
           <div style="color:#fff;font-weight:700;margin-bottom:6px;">How to complete your order:</div>
           <div>1. Open your Zelle app</div>
           <div>2. Send payment to <strong style="color:#FF6A00;">@forgepeptides</strong></div>
@@ -2341,16 +2393,41 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
           <div>4. We'll confirm and ship as soon as payment clears</div>
         </div>
 
-        <button onclick="closeOrderModal()" style="padding:12px 32px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Got It</button>
+        <button onclick="closeOrderModal()" style="padding:12px 32px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;cursor:pointer;">Got It</button>
       </div>
 
     </div>
   </div>
 </div>
 
+<!-- SHIPPING & RETURNS POLICY MODAL -->
+<div id="policy-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#141414;border:1px solid rgba(255,106,0,0.35);border-radius:var(--r-lg);max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(255,106,0,0.15);">
+    <div style="padding:22px 26px 14px;border-bottom:1px solid rgba(255,106,0,0.15);display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <i class="bi bi-box-seam" style="color:#FF6A00;font-size:1.4rem;"></i>
+        <div style="color:#fff;font-size:1.05rem;font-weight:700;">Shipping &amp; Returns</div>
+      </div>
+      <button onclick="closePolicyModal()" style="background:none;border:none;color:#555;font-size:1.3rem;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="padding:22px 26px;overflow-y:auto;flex:1;font-size:0.87rem;line-height:1.7;color:#aaa;">
+      <p id="policy-shipping" style="color:#FF6A00;font-weight:700;margin-bottom:6px;">Shipping Policy</p>
+      <p style="margin-bottom:10px;">Orders ship once Zelle payment is confirmed — typically within 1–2 business days of payment. You'll receive an order number by email; include it in your Zelle memo so we can match your payment quickly.</p>
+      <p style="margin-bottom:10px;">Shipping rates are calculated in real time at checkout (USPS and UPS options). <strong style="color:#fff;">Free shipping on orders over $300.</strong></p>
+      <p style="margin-bottom:18px;">Local pickup is available in Miami, FL at no charge — select "Local Pickup" at checkout and we'll contact you to arrange it.</p>
+      <p id="policy-returns" style="color:#FF6A00;font-weight:700;margin-bottom:6px;">Returns</p>
+      <p style="margin-bottom:10px;">Due to the nature of research compounds, <strong style="color:#fff;">all sales are final</strong> and we do not accept returns.</p>
+      <p style="margin-bottom:0;">If you receive a damaged or incorrect item, contact us within 48 hours of delivery with your order number and a photo, and we'll make it right.</p>
+    </div>
+    <div style="padding:16px 26px 20px;border-top:1px solid rgba(255,106,0,0.15);">
+      <button onclick="closePolicyModal()" style="width:100%;padding:12px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:0.95rem;cursor:pointer;">Got It</button>
+    </div>
+  </div>
+</div>
+
 <!-- TERMS OF SERVICE MODAL -->
 <div id="tos-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#141414;border:1px solid rgba(255,106,0,0.35);border-radius:12px;max-width:640px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(255,106,0,0.15);">
+  <div style="background:#141414;border:1px solid rgba(255,106,0,0.35);border-radius:var(--r-lg);max-width:640px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(255,106,0,0.15);">
 
     <!-- Header -->
     <div style="padding:24px 28px 16px;border-bottom:1px solid rgba(255,106,0,0.15);">
@@ -2405,8 +2482,8 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
         <span style="color:#ccc;font-size:0.85rem;line-height:1.5;">I am 21 or older, I have read and agree to the Terms of Service, and I confirm these products are for <strong style="color:#fff;">research use only.</strong></span>
       </label>
       <div style="display:flex;gap:12px;">
-        <button id="tos-agree-btn" onclick="tosAgree()" style="flex:1;padding:13px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.95rem;cursor:pointer;opacity:0.45;pointer-events:none;transition:opacity .2s;">I Agree — Add to Order</button>
-        <button onclick="tosCancel()" style="padding:13px 20px;background:transparent;color:#888;border:1px solid rgba(255,255,255,0.12);border-radius:8px;font-size:0.9rem;cursor:pointer;">Cancel</button>
+        <button id="tos-agree-btn" onclick="tosAgree()" style="flex:1;padding:13px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:var(--r-lg);font-weight:700;font-size:0.95rem;cursor:pointer;opacity:0.45;pointer-events:none;transition:opacity .2s;">I Agree — Add to Order</button>
+        <button onclick="tosCancel()" style="padding:13px 20px;background:transparent;color:#888;border:1px solid rgba(255,255,255,0.12);border-radius:var(--r-lg);font-size:0.9rem;cursor:pointer;">Cancel</button>
       </div>
     </div>
   </div>
@@ -2548,7 +2625,7 @@ async function fetchShippingRates(zip) {
     ratesList.innerHTML = data.rates.map((rate, i) => {
       const tag = tagMeta[rate.tag] || null;
       return `
-      <label id="rate-label-${rate.id}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1a1a1a;border:1px solid rgba(255,106,0,${i===0?'0.5':'0.15'});border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border-color 0.15s;">
+      <label id="rate-label-${rate.id}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1a1a1a;border:1px solid rgba(255,106,0,${i===0?'0.5':'0.15'});border-radius:var(--r-lg);cursor:pointer;margin-bottom:6px;transition:border-color 0.15s;">
         <input type="radio" name="shipping-rate" value="${rate.id}" ${i===0?'checked':''}
           onchange="selectShippingRate('${rate.id}',${rate.amount},'${rate.label.replace(/'/g,"\\'")}','${rate.carrier}',${rate.days||0})"
           style="accent-color:#FF6A00;flex-shrink:0;">
@@ -2619,9 +2696,9 @@ function renderOrderSummary() {
         <div style="color:#FF6A00;font-size:0.82rem;margin-top:2px;">$${item.price.toFixed(2)} each</div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;">
-        <button onclick="changeQty('${id}',-1)" style="width:26px;height:26px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.3);color:#fff;border-radius:5px;cursor:pointer;">−</button>
+        <button onclick="changeQty('${id}',-1)" style="width:26px;height:26px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.3);color:#fff;border-radius:var(--r);cursor:pointer;">−</button>
         <span style="color:#fff;font-weight:700;min-width:18px;text-align:center;">${item.qty}</span>
-        <button onclick="changeQty('${id}',1)" style="width:26px;height:26px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.3);color:#fff;border-radius:5px;cursor:pointer;">+</button>
+        <button onclick="changeQty('${id}',1)" style="width:26px;height:26px;background:#1e1e1e;border:1px solid rgba(255,106,0,0.3);color:#fff;border-radius:var(--r);cursor:pointer;">+</button>
       </div>
       <div style="color:#fff;font-weight:700;min-width:54px;text-align:right;">$${(item.price*item.qty).toFixed(2)}</div>
       <button onclick="removeForgeItem('${id}')" style="background:none;border:none;color:#555;cursor:pointer;font-size:0.95rem;padding:0 4px;">✕</button>
@@ -2741,12 +2818,12 @@ async function submitForgeOrder(e) {
     } else {
       alert('Something went wrong. Please contact us directly via Zelle @forgepeptides.');
       btn.disabled = false;
-      btn.textContent = 'Place Order & Receive Invoice';
+      btn.textContent = 'Place Order';
     }
   } catch(err) {
     alert('Connection error. Please try again or contact us directly.');
     btn.disabled = false;
-    btn.textContent = 'Place Order & Receive Invoice';
+    btn.textContent = 'Place Order';
   }
 }
 

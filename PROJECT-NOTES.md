@@ -25,7 +25,7 @@
 ```
 forge-peptides-website/
 ├── index.html                        # Main site + order form
-├── admin.html                        # Password-gated order dashboard (password: forge2024)
+├── admin.html                        # Password-gated order dashboard (see ADMIN_PASSWORD env var in Netlify)
 ├── netlify.toml                      # Build config (command="", publish=".")
 ├── sitemap.xml                       # Google indexing
 ├── robots.txt                        # Google indexing
