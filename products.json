@@ -1,0 +1,266 @@
+{
+  "_comment": "SINGLE SOURCE for generated product landing pages. Edit here, then run: node build-products.js. Do NOT hand-edit files in /products — they are generated. Keep prices in sync with create-invoice.js CATALOG (that merge is intentionally a later round).",
+  "site": {
+    "base": "https://theforgepeptides.com",
+    "brand": "The Forge Peptides",
+    "email": "alexanderranch3@gmail.com"
+  },
+  "products": [
+    {
+      "slug": "retatrutide",
+      "name": "Retatrutide",
+      "alias": "LY3437943 — Triple Agonist",
+      "categoryLabel": "Weight Management",
+      "schemaCategory": "Research Peptides / Metabolic",
+      "alternateName": ["LY3437943", "Triple Agonist", "GIP GLP-1 Glucagon Agonist", "GLP-3"],
+      "image": "assets/retatrutide-vial.webp",
+      "title": "Buy Retatrutide (LY3437943) 10/12/15/24mg | The Forge Peptides",
+      "metaDescription": "Retatrutide (LY3437943) trispecific GIP/GLP-1/glucagon receptor agonist for in-vitro research. Available in 10mg, 12mg, 15mg and 24mg vials at ≥98% HPLC purity. For research use only.",
+      "sizes": [
+        { "id": "retatrutide-10mg", "label": "10mg", "price": 155 },
+        { "id": "retatrutide-12mg", "label": "12mg", "price": 160 },
+        { "id": "retatrutide-15mg", "label": "15mg", "price": 185 },
+        { "id": "retatrutide-24mg", "label": "24mg", "price": 245 }
+      ],
+      "schemaDescription": "Trispecific GIP/GLP-1/glucagon receptor agonist (LY3437943). Studied for its role in energy balance, adipose reduction, and glycemic regulation via simultaneous multi-receptor engagement. Available in 10mg, 12mg, 15mg, and 24mg vials. For in-vitro research use only.",
+      "summary": [
+        "Retatrutide (development code LY3437943) is a synthetic trispecific peptide that engages three receptors at once — the GIP, GLP-1, and glucagon receptors. This simultaneous multi-receptor engagement is what sets it apart from the single- and dual-agonist peptides that preceded it, and it is the reason the compound has become a focal point of recent metabolic research literature.",
+        "In the laboratory, Retatrutide is studied for its role in energy balance, adipose reduction pathways, and glycemic regulation. Investigators use in-vitro and preclinical models to examine how coordinated signaling across the GIP, GLP-1, and glucagon axes behaves relative to compounds that act on only one or two of those receptors. All work with this material at The Forge is intended strictly for in-vitro laboratory research and never for human or animal use.",
+        "Retatrutide is offered in four vial sizes — 10mg, 12mg, 15mg, and 24mg — so a research group can match vial quantity to the scale of a given study rather than over-ordering or splitting material across vials. Every vial is lyophilized and independently third-party lab tested at ≥98% purity by HPLC, and a Certificate of Analysis for any batch is available on request by email. Store lyophilized vials cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided to preserve peptide integrity."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Sizes", "v": "10mg / 12mg / 15mg / 24mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What sizes of Retatrutide are available?", "a": "Retatrutide is stocked in 10mg, 12mg, 15mg, and 24mg vials so research groups can match vial quantity to study scale. Pricing is $155, $160, $185, and $245 respectively." },
+        { "q": "Is a Certificate of Analysis available for Retatrutide?", "a": "Yes. Every batch is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com with the vial size to request the matching COA." },
+        { "q": "How is Retatrutide shipped and stored?", "a": "Vials ship lyophilized. Store them cool, dry, and away from direct light; refrigeration is recommended for longer-term laboratory storage. This is research material for in-vitro use only." }
+      ]
+    },
+    {
+      "slug": "phoenix-blend",
+      "name": "Phoenix Blend",
+      "alias": "Tesamorelin + Ipamorelin GH-Axis Formula",
+      "categoryLabel": "GH Axis Blend",
+      "schemaCategory": "Research Peptide Blends / Growth Hormone",
+      "alternateName": ["Tesamorelin Ipamorelin blend", "GH axis research formula", "GHRH GHRP blend"],
+      "image": "assets/phoenix-blend-vial.webp",
+      "title": "Buy Phoenix Blend (Tesamorelin + Ipamorelin) | The Forge Peptides",
+      "metaDescription": "Phoenix Blend pairs Tesamorelin (GRF 1-44 analog) with Ipamorelin (GHS-R1a agonist) in two ratio configurations for GH-axis research. ≥98% HPLC purity. For research use only.",
+      "sizes": [
+        { "id": "phoenix-blend", "label": "10mg / 5mg", "price": 155 },
+        { "id": "phoenix-blend-12-2", "label": "12mg / 2mg", "price": 155 }
+      ],
+      "schemaDescription": "Dual-mechanism GH axis research formula. Available in two ratio configurations: Tesamorelin 10mg + Ipamorelin 5mg and Tesamorelin 12mg + Ipamorelin 2mg. Tesamorelin (GRF(1-44)-NH2 analog) targets visceral adipose reduction pathways while Ipamorelin (GHS-R1a selective agonist) provides clean GH pulse stimulation without cortisol or prolactin interference. For in-vitro research use only.",
+      "summary": [
+        "Phoenix Blend is a dual-mechanism growth-hormone-axis research formula that combines two complementary peptides in a single vial. Tesamorelin, a GRF(1-44)-NH2 analog, and Ipamorelin, a selective GHS-R1a agonist, act on different points of the GH axis — pairing a GHRH-analog mechanism with a selective secretagogue mechanism so researchers can study the two together rather than sourcing and combining them separately.",
+        "In research models, Tesamorelin is examined for its role in stimulating endogenous GH secretion and in visceral adipose reduction pathways, while Ipamorelin is studied for clean GH pulse stimulation without the cortisol or prolactin interference seen with some other secretagogues. Investigators use the pairing to explore how a GHRH-analog and a selective GHS-R1a agonist behave in combination within in-vitro systems. All material is intended strictly for in-vitro laboratory research.",
+        "The blend is offered in two ratio configurations — Tesamorelin 10mg with Ipamorelin 5mg, and Tesamorelin 12mg with Ipamorelin 2mg — so a study can select the compound ratio that matches its design instead of reconstituting two vials to approximate it. Both configurations are lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request. Store vials cool, dry, and away from direct light; refrigerate for longer-term storage and avoid repeated temperature swings."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Configurations", "v": "10/5mg or 12/2mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What is the difference between the two Phoenix Blend configurations?", "a": "One vial carries Tesamorelin 10mg with Ipamorelin 5mg; the other carries Tesamorelin 12mg with Ipamorelin 2mg. Both are $155 — the choice is about the compound ratio a given research design calls for." },
+        { "q": "Why combine Tesamorelin and Ipamorelin in one formula?", "a": "The two act on different points of the GH axis — a GHRH analog and a selective GHS-R1a agonist — so pairing them lets researchers study the combination without sourcing and reconstituting two separate vials." },
+        { "q": "Is a COA available for Phoenix Blend?", "a": "Yes. Both configurations are third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the Certificate of Analysis." }
+      ]
+    },
+    {
+      "slug": "glow-blend",
+      "name": "Glow Blend",
+      "alias": "GHK-Cu + BPC-157 + TB-500",
+      "categoryLabel": "Skin & Tissue Blend",
+      "schemaCategory": "Research Peptide Blends / Skin & Anti-Aging",
+      "alternateName": ["GHK-Cu BPC-157 TB-500 blend", "skin peptide blend", "anti-aging peptide stack"],
+      "image": "assets/glow-blend-vial.webp",
+      "title": "Buy Glow Blend (GHK-Cu / BPC-157 / TB-500) | The Forge Peptides",
+      "metaDescription": "Glow Blend is a triple-compound skin and connective-tissue research stack: GHK-Cu 50mg, BPC-157 10mg and TB-500 10mg. ≥98% HPLC purity. For in-vitro research use only.",
+      "sizes": [
+        { "id": "glow-blend", "label": "50 / 10 / 10mg", "price": 165 }
+      ],
+      "schemaDescription": "Triple-compound skin and connective tissue research stack: GHK-Cu 50mg + BPC-157 10mg + TB-500 10mg. GHK-Cu (Copper Tripeptide-1) for collagen/elastin synthesis and MMP modulation, BPC-157 for tissue repair, and TB-500 for cellular migration and anti-inflammatory signaling. For in-vitro research use only.",
+      "summary": [
+        "Glow Blend is a triple-compound research stack built around skin and connective-tissue pathways. It combines GHK-Cu (Copper Tripeptide-1) at 50mg with BPC-157 at 10mg and TB-500 at 10mg in one lyophilized vial, so a single preparation covers three complementary mechanisms that researchers otherwise study in isolation.",
+        "GHK-Cu is a naturally occurring copper-binding tripeptide extensively researched for collagen and elastin synthesis promotion, MMP modulation, and dermal tissue remodeling. BPC-157 is studied for gut and tissue repair pathways, and TB-500 (a Tβ4 fragment) for cellular migration and anti-inflammatory signaling. Together the three are used in connective-tissue and dermal research models to examine how copper-peptide, repair, and migration mechanisms interact. Every use of this material is intended strictly for in-vitro laboratory research.",
+        "Glow Blend is supplied as a single fixed-ratio vial rather than in multiple size options, because the value of the stack lies in its specific 50/10/10mg proportion — a combination chosen to keep the three compounds in a consistent research ratio across batches. The vial is third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request by email. Store the lyophilized vial cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Composition", "v": "GHK-Cu 50mg / BPC-157 10mg / TB-500 10mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What is in Glow Blend?", "a": "A single vial contains GHK-Cu 50mg, BPC-157 10mg, and TB-500 10mg — a fixed-ratio skin and connective-tissue research stack. Priced at $165." },
+        { "q": "Why is Glow Blend only sold in one size?", "a": "The stack is defined by its 50/10/10mg ratio, so it ships as a single fixed configuration to keep the three compounds in a consistent research proportion across batches." },
+        { "q": "Is a Certificate of Analysis available?", "a": "Yes. The blend is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the COA for your batch." }
+      ]
+    },
+    {
+      "slug": "wolverine",
+      "name": "Wolverine Stack & Blend",
+      "alias": "BPC-157 + TB-500 Recovery Research Formula",
+      "categoryLabel": "Recovery Blend",
+      "schemaCategory": "Research Peptide Blends / Recovery",
+      "alternateName": ["BPC-157 TB-500 blend", "BPC TB-500 stack", "recovery peptide blend"],
+      "image": "assets/wolverine-stack-vial.webp",
+      "title": "Buy Wolverine Stack & Blend (BPC-157 / TB-500) | The Forge Peptides",
+      "metaDescription": "Wolverine pairs BPC-157 with TB-500 in two strengths — 5mg/5mg Blend and 10mg/10mg Stack — the most studied recovery peptide combination in research literature. For research use only.",
+      "sizes": [
+        { "id": "wolverine-blend-5mg", "label": "5mg / 5mg", "price": 100 },
+        { "id": "wolverine-stack", "label": "10mg / 10mg", "price": 115 }
+      ],
+      "schemaDescription": "Proprietary research blend: BPC-157 + TB-500. The most studied recovery peptide combination in research literature. BPC-157 for gut and tissue repair pathways, TB-500 (Tβ4 fragment) for cellular migration and inflammation modulation. Available as a 5mg/5mg Blend and a 10mg/10mg Stack. For in-vitro research use only.",
+      "summary": [
+        "Wolverine pairs BPC-157 with TB-500 — the most studied recovery-peptide combination in the research literature — in a single lyophilized vial. BPC-157 is a synthetic peptide investigated for gut and tissue repair pathways, while TB-500 is a Tβ4 fragment studied for cellular migration and inflammation modulation. Offering the pair pre-combined lets researchers work with a consistent ratio rather than reconstituting and mixing two separate compounds.",
+        "In research models the two peptides are examined together because their mechanisms are complementary: one is associated with tissue-repair signaling, the other with cell migration and the modulation of inflammatory pathways. This pairing is why the BPC-157 / TB-500 combination appears so frequently in recovery-focused in-vitro and preclinical research. All Wolverine material is intended strictly for in-vitro laboratory research and never for human or animal use.",
+        "Wolverine comes in two strengths so a study can match material to its scale: the Blend at 5mg/5mg for lower-quantity research protocols, and the Stack at 10mg/10mg for larger studies. Both carry the same proven compound pairing in equal ratios and are third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request. Store the lyophilized vials cool, dry, and out of direct light; refrigerate for longer-term storage and avoid repeated temperature swings."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Strengths", "v": "5mg/5mg Blend or 10mg/10mg Stack" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What is the difference between the Wolverine Blend and the Wolverine Stack?", "a": "Both pair BPC-157 with TB-500 in an equal ratio. The Blend is 5mg/5mg ($100) for lower-quantity research protocols; the Stack is 10mg/10mg ($115) for larger studies." },
+        { "q": "Why are BPC-157 and TB-500 combined?", "a": "Their research mechanisms are complementary — one associated with tissue-repair signaling, the other with cellular migration and inflammation modulation — which is why the pairing appears so often in recovery-focused research literature." },
+        { "q": "Is a COA available for Wolverine?", "a": "Yes. Both strengths are third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the Certificate of Analysis." }
+      ]
+    },
+    {
+      "slug": "cjc-1295-ipamorelin",
+      "name": "CJC-1295 / Ipamorelin",
+      "alias": "No DAC · Modified GRF 1-29 + GHS-R1a Agonist",
+      "categoryLabel": "GH / Hormone",
+      "schemaCategory": "Research Peptides / Growth Hormone",
+      "alternateName": ["CJC-1295 no DAC", "Modified GRF 1-29", "Ipamorelin blend", "CJC Ipamorelin stack"],
+      "image": "assets/cjc1295-ipamorelin-vial.webp",
+      "title": "Buy CJC-1295 / Ipamorelin (No DAC) 5mg/5mg | The Forge Peptides",
+      "metaDescription": "CJC-1295 (No DAC, modified GRF 1-29) combined with Ipamorelin (GHS-R1a agonist) 5mg/5mg for pulsatile GH-axis research. ≥98% HPLC purity. For in-vitro research use only.",
+      "sizes": [
+        { "id": "cjc1295-ipamorelin", "label": "5mg / 5mg", "price": 99 }
+      ],
+      "schemaDescription": "CJC-1295 without DAC (modified GRF 1-29) combined with Ipamorelin (GHS-R1a selective agonist). Studied for pulsatile GH secretion providing physiological-pattern stimulation in research models. For in-vitro research use only.",
+      "summary": [
+        "CJC-1295 / Ipamorelin combines two growth-hormone-axis research peptides in a single 5mg/5mg vial. CJC-1295 here is the No-DAC form (modified GRF 1-29), a short-acting GHRH analog, paired with Ipamorelin, a selective GHS-R1a agonist. The two mechanisms — a GHRH analog and a selective secretagogue — are frequently studied together, and the pre-combined vial keeps them in a consistent research ratio.",
+        "In research models this pairing is examined for pulsatile GH secretion that follows a physiological-pattern rather than a sustained one — the No-DAC form of CJC-1295 is specifically studied because it avoids the DAC-mediated accumulation associated with the longer-acting variant. Ipamorelin contributes a clean secretagogue mechanism studied without the cortisol or prolactin interference seen with some alternatives. All work with this material is intended strictly for in-vitro laboratory research.",
+        "This blend is supplied as a single fixed 5mg/5mg configuration rather than in multiple sizes, because the equal-ratio pairing is the point of the formula — a consistent proportion of GHRH-analog to secretagogue across batches. The vial is lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request by email. Store the vial cool, dry, and away from direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Composition", "v": "CJC-1295 No DAC 5mg / Ipamorelin 5mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "Is this CJC-1295 with or without DAC?", "a": "Without DAC — it is the modified GRF 1-29 (short-acting) form, paired with Ipamorelin at 5mg/5mg. Priced at $99." },
+        { "q": "Why is CJC-1295 paired with Ipamorelin?", "a": "They act on different points of the GH axis — a GHRH analog and a selective GHS-R1a agonist — so the pairing is studied together for physiological-pattern GH secretion in research models." },
+        { "q": "Is a Certificate of Analysis available?", "a": "Yes. The blend is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the COA for your batch." }
+      ]
+    },
+    {
+      "slug": "nad-plus",
+      "name": "NAD+",
+      "alias": "Nicotinamide Adenine Dinucleotide",
+      "categoryLabel": "Cellular Health",
+      "schemaCategory": "Research Compounds / Metabolic",
+      "alternateName": ["Nicotinamide adenine dinucleotide", "NAD plus", "NAD coenzyme", "NAD+ precursor"],
+      "image": "assets/nad-500mg-vial.webp",
+      "title": "Buy NAD+ 100/500/1000mg for Research | The Forge Peptides",
+      "metaDescription": "NAD+ (Nicotinamide Adenine Dinucleotide) in 100mg, 500mg and 1000mg vials for cellular-metabolism research. ≥98% HPLC purity. For in-vitro research use only.",
+      "sizes": [
+        { "id": "nad-100mg", "label": "100mg", "price": 85 },
+        { "id": "nad-500mg", "label": "500mg", "price": 99 },
+        { "id": "nad-1000mg", "label": "1000mg", "price": 140 }
+      ],
+      "schemaDescription": "Essential coenzyme and PARP-1/sirtuin substrate central to redox reactions and cellular energy metabolism. Studied for roles in DNA repair, SIRT1/3 activation, mitochondrial biogenesis, and hallmarks of cellular aging. Available in 100mg, 500mg, and 1000mg sizes. For in-vitro research use only.",
+      "summary": [
+        "NAD+ (Nicotinamide Adenine Dinucleotide) is an essential coenzyme found in every living cell and a substrate for the PARP-1 and sirtuin enzyme families. It sits at the center of redox reactions and cellular energy metabolism, which makes it one of the most widely referenced compounds in cellular-aging and mitochondrial research.",
+        "In the laboratory, NAD+ is studied for its roles in DNA repair, SIRT1 and SIRT3 activation, mitochondrial biogenesis, and the broader set of pathways associated with the hallmarks of cellular aging. Researchers use it in in-vitro systems to examine how coenzyme availability influences these interconnected metabolic and repair mechanisms. All material supplied by The Forge is intended strictly for in-vitro laboratory research and never for human or animal use.",
+        "NAD+ is offered in three quantities — 100mg, 500mg, and 1000mg — because coenzyme research spans a wide range of preparation volumes, and a larger vial is more economical for higher-throughput work while a smaller vial suits focused studies. Every vial is lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request by email. Store lyophilized vials cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided to preserve integrity."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Sizes", "v": "100mg / 500mg / 1000mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What sizes of NAD+ are available?", "a": "NAD+ is stocked in 100mg, 500mg, and 1000mg vials, priced $85, $99, and $140. Larger vials are more economical for higher-throughput research." },
+        { "q": "Is NAD+ a peptide?", "a": "No — NAD+ is a coenzyme (Nicotinamide Adenine Dinucleotide), not a peptide. It is offered here as a research compound for in-vitro cellular-metabolism work." },
+        { "q": "Is a Certificate of Analysis available?", "a": "Yes. Every batch is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com with the vial size to request the matching COA." }
+      ]
+    },
+    {
+      "slug": "tesamorelin",
+      "name": "Tesamorelin 10mg",
+      "alias": "GRF(1-44)-NH2 Analog",
+      "categoryLabel": "GH / Hormone",
+      "schemaCategory": "Research Peptides / Growth Hormone",
+      "alternateName": ["GRF(1-44)-NH2", "GHRH analog", "Egrifta research"],
+      "image": "assets/tesamorelin-vial.webp",
+      "title": "Buy Tesamorelin 10mg (GRF 1-44 Analog) | The Forge Peptides",
+      "metaDescription": "Tesamorelin 10mg, a synthetic GHRH analog (GRF 1-44 amide) for GH-secretion and metabolic research. ≥98% HPLC purity. For in-vitro research use only.",
+      "sizes": [
+        { "id": "tesamorelin-10mg", "label": "10mg", "price": 89 }
+      ],
+      "schemaDescription": "Synthetic GHRH analog (GRF 1-44 amide) studied for stimulation of endogenous GH secretion, visceral adipose tissue reduction pathways, and lipodystrophy-related metabolic research. For in-vitro research use only.",
+      "summary": [
+        "Tesamorelin is a synthetic analog of growth-hormone-releasing hormone — specifically the GRF(1-44)-NH2 (GRF 1-44 amide) sequence. As a GHRH analog it acts on the growth-hormone axis at the releasing-hormone level, which places it among the most studied secretagogue-class research peptides.",
+        "In research models, Tesamorelin is examined for its role in stimulating endogenous GH secretion, in visceral adipose tissue reduction pathways, and in lipodystrophy-related metabolic research. Investigators use in-vitro systems to explore how a GHRH-analog mechanism behaves on its own and in combination with selective secretagogues such as Ipamorelin. All work with this material is intended strictly for in-vitro laboratory research and never for human or animal use.",
+        "Tesamorelin is supplied as a single 10mg vial, a quantity chosen to suit the majority of focused GH-axis research protocols. Researchers studying the combined GHRH-analog and secretagogue mechanisms can also find Tesamorelin paired with Ipamorelin in the Phoenix Blend. Every vial is lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request by email. Store the lyophilized vial cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Size", "v": "10mg / vial" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What is Tesamorelin?", "a": "A synthetic GHRH analog (GRF 1-44 amide) studied in research models for endogenous GH secretion and visceral adipose reduction pathways. Supplied as a 10mg vial at $89." },
+        { "q": "Can Tesamorelin be studied alongside Ipamorelin?", "a": "Yes — the two are pre-combined in the Phoenix Blend for researchers who want to study the GHRH-analog and selective-secretagogue mechanisms together." },
+        { "q": "Is a Certificate of Analysis available?", "a": "Yes. Every batch is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the COA." }
+      ]
+    },
+    {
+      "slug": "ghk-cu",
+      "name": "GHK-Cu",
+      "alias": "Copper Tripeptide-1 (Gly-His-Lys)",
+      "categoryLabel": "Recovery / Skin",
+      "schemaCategory": "Research Peptides / Anti-Aging",
+      "alternateName": ["Copper tripeptide-1", "GHK copper", "Gly-His-Lys copper"],
+      "image": "assets/ghk-cu-vial.webp",
+      "title": "Buy GHK-Cu Copper Peptide 50/100mg | The Forge Peptides",
+      "metaDescription": "GHK-Cu (Copper Tripeptide-1, Gly-His-Lys) in 50mg and 100mg vials for collagen, elastin and dermal-remodeling research. ≥98% HPLC purity. For in-vitro research use only.",
+      "sizes": [
+        { "id": "ghk-cu-50mg", "label": "50mg", "price": 75 },
+        { "id": "ghk-cu-100mg", "label": "100mg", "price": 85 }
+      ],
+      "schemaDescription": "Naturally occurring copper-binding tripeptide (Gly-His-Lys). Extensively researched for collagen and elastin synthesis promotion, MMP modulation, angiogenesis pathways, and dermal tissue remodeling. Available in 50mg and 100mg vials. For in-vitro research use only.",
+      "summary": [
+        "GHK-Cu is a naturally occurring copper-binding tripeptide with the sequence Gly-His-Lys (Copper Tripeptide-1). It is one of the most extensively researched copper peptides, valued in the laboratory for the way it coordinates a copper ion — a feature central to the pathways it is studied within.",
+        "In research settings, GHK-Cu is examined for collagen and elastin synthesis promotion, MMP modulation, angiogenesis pathways, and dermal tissue remodeling. Investigators use in-vitro dermal and connective-tissue models to explore how a copper-binding tripeptide influences these interconnected skin and matrix mechanisms. GHK-Cu also appears as a component of the Glow and KLOW research blends. All material supplied here is intended strictly for in-vitro laboratory research.",
+        "GHK-Cu is offered in 50mg and 100mg vials so research groups can match quantity to study scale — the 100mg vial being more economical per milligram for larger dermal-research protocols. Both are lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request by email. Because copper peptides are light-sensitive, storage away from direct light is particularly important: keep vials cool, dry, and shielded from light, refrigerate for longer-term storage, and avoid repeated temperature swings."
+      ],
+      "specs": [
+        { "k": "Purity", "v": "≥98% HPLC" },
+        { "k": "Form", "v": "Lyophilized powder" },
+        { "k": "Sizes", "v": "50mg / 100mg" },
+        { "k": "Testing", "v": "Third-party lab verified" }
+      ],
+      "faq": [
+        { "q": "What sizes of GHK-Cu are available?", "a": "GHK-Cu is stocked in 50mg ($75) and 100mg ($85) vials. The 100mg vial is more economical per milligram for larger research protocols." },
+        { "q": "Does GHK-Cu require special storage?", "a": "Copper peptides are light-sensitive, so keep vials shielded from direct light in addition to cool and dry. Refrigerate for longer-term laboratory storage and avoid repeated temperature swings." },
+        { "q": "Is GHK-Cu available in any blends?", "a": "Yes — GHK-Cu is a component of both the Glow Blend and the KLOW Blend for researchers studying it alongside repair and migration peptides." }
+      ]
+    }
+  ]
+}
