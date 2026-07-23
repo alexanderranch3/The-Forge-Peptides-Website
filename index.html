@@ -734,6 +734,12 @@ nav{
   display:flex;align-items:center;justify-content:space-between;
   height:68px;
 }
+/* Fixed nav is 68px tall with no offset compensation, so every anchor-jump
+   section (#about, #catalog, #blends, #how-it-works, #pricing, #faq) landed
+   with its heading hidden directly underneath the nav — looked like clicking
+   a nav link jumped to the wrong spot. scroll-margin-top fixes it for every
+   current and future jump target in one rule. */
+section[id]{scroll-margin-top:88px;}
 .nav-brand{display:flex;align-items:center;gap:12px;}
 .nav-logo-img{
   height:54px;width:auto;display:block;
