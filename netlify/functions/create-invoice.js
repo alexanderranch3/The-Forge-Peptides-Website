@@ -18,6 +18,76 @@ function idempotencyKey() {
   return `forge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// ── Server-Side Catalog (source of truth for prices) ──────────────────────────
+// NEVER trust client-supplied prices or names — a manipulated POST body could
+// otherwise generate a valid invoice at any price. Keep in sync with index.html.
+
+class ValidationError extends Error {}
+
+const CATALOG = {
+  'retatrutide-10mg':           { name: 'Retatrutide 10mg',                  price: 155 },
+  'retatrutide-12mg':           { name: 'Retatrutide 12mg',                  price: 160 },
+  'retatrutide-15mg':           { name: 'Retatrutide 15mg',                  price: 185 },
+  'retatrutide-24mg':           { name: 'Retatrutide 24mg',                  price: 245 },
+  'tesamorelin-10mg':           { name: 'Tesamorelin 10mg',                  price: 89  },
+  'sermorelin-10mg':            { name: 'Sermorelin 10mg',                   price: 119 },
+  'ipamorelin-10mg':            { name: 'Ipamorelin 10mg',                   price: 99  },
+  'mots-c-10mg':                { name: 'MOTS-C 10mg',                       price: 72  },
+  'ghk-cu-50mg':                { name: 'GHK-Cu 50mg',                       price: 75  },
+  'ghk-cu-100mg':               { name: 'GHK-Cu 100mg',                      price: 85  },
+  'ss-31-10mg':                 { name: 'SS-31 10mg',                        price: 82  },
+  'semax-selank':               { name: 'Semax / Selank',                    price: 95  },
+  'semax-10mg':                 { name: 'Semax 10mg',                        price: 99  },
+  'selank-10mg':                { name: 'Selank 10mg',                       price: 95  },
+  'dsip-5mg':                   { name: 'DSIP 5mg',                          price: 62  },
+  'nad-100mg':                  { name: 'NAD+ 100mg',                        price: 85  },
+  'nad-500mg':                  { name: 'NAD+ 500mg',                        price: 99  },
+  'nad-1000mg':                 { name: 'NAD+ 1000mg',                       price: 140 },
+  'melanotan-ii-10mg':          { name: 'Melanotan II 10mg',                 price: 65  },
+  'reconstitution-liquid-30ml': { name: 'Reconstitution Liquid 30ml',        price: 39  },
+  'wolverine-stack':            { name: 'Wolverine Stack',                   price: 115 },
+  'wolverine-blend-5mg':        { name: 'Wolverine Blend 5mg/5mg',           price: 100 },
+  'cjc1295-ipamorelin':         { name: 'CJC-1295 / Ipamorelin (No DAC)',    price: 99  },
+  'phoenix-blend':              { name: 'Phoenix Blend (10mg/5mg)',          price: 155 },
+  'phoenix-blend-12-2':         { name: 'Phoenix Blend (12mg/2mg)',          price: 155 },
+  'glow-blend':                 { name: 'Glow Blend',                        price: 165 },
+  'klow-blend':                 { name: 'KLOW Blend',                        price: 195 },
+};
+
+const MAX_QTY_PER_ITEM        = 50;
+const FREE_SHIPPING_THRESHOLD = 300;
+const MAX_SHIPPING_AMOUNT     = 100;
+const FALLBACK_SHIPPING       = 25;
+
+// Rebuild every line item from the server-side catalog. Client-supplied price
+// and name are ignored entirely. Throws on unknown ids or invalid quantities.
+function sanitizeItems(rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new ValidationError('No items in order.');
+  }
+  return rawItems.map(raw => {
+    const entry = CATALOG[raw?.id];
+    if (!entry) {
+      throw new ValidationError(`Unknown item: ${String(raw?.id).slice(0, 60)}`);
+    }
+    const qty = Math.floor(Number(raw.qty));
+    if (!Number.isFinite(qty) || qty < 1 || qty > MAX_QTY_PER_ITEM) {
+      throw new ValidationError(`Invalid quantity for ${raw.id}`);
+    }
+    return { id: raw.id, name: entry.name, price: entry.price, qty };
+  });
+}
+
+// Clamp shipping: pickup is always free, free-shipping threshold is enforced
+// server-side, and a shipped order can never carry a negative/absurd amount.
+function sanitizeShipping(rawAmount, fulfillment, subtotal) {
+  if (fulfillment !== 'Ship') return 0;
+  if (subtotal >= FREE_SHIPPING_THRESHOLD) return 0;
+  const n = Number(rawAmount);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_SHIPPING_AMOUNT) return FALLBACK_SHIPPING;
+  return Math.round(n * 100) / 100;
+}
+
 // ── Inventory Adjustment ──────────────────────────────────────────────────────
 
 function nameToId(name) {
@@ -325,12 +395,18 @@ exports.handler = async (event) => {
   }
 
   try {
+    // Rebuild items + shipping from the server-side catalog — never trust
+    // client-supplied prices, names, or amounts.
+    const cleanItems = sanitizeItems(items);
+    const subtotal   = cleanItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const shipping   = sanitizeShipping(shippingAmount, fulfillment, subtotal);
+    const shipLabel  = shippingLabel ? String(shippingLabel).slice(0, 80) : null;
+
     const customerId = await findOrCreateCustomer(customerName, customerEmail, customerPhone);
     const validPromo = await validatePromo(promoCode, customerId);
-    const shipping   = Number(shippingAmount) || 0;
-    const order      = await createOrder(customerId, items, shipping, shippingLabel, validPromo, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip);
+    const order      = await createOrder(customerId, cleanItems, shipping, shipLabel, validPromo, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip);
     const invoice    = await createInvoice(customerId, order.id, notes, validPromo, shipping, fulfillment, address);
-    await adjustInventory(items); // deduct from Square inventory
+    await adjustInventory(cleanItems); // deduct from Square inventory
 
     return {
       statusCode: 200,
@@ -344,6 +420,9 @@ exports.handler = async (event) => {
     };
   } catch (err) {
     console.error('create-invoice error:', err.message);
+    if (err instanceof ValidationError) {
+      return { statusCode: 400, body: JSON.stringify({ error: err.message }) };
+    }
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
