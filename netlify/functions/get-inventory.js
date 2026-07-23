@@ -26,8 +26,15 @@ function nameToId(name) {
   if (n.includes('phoenix'))                                                           return 'phoenix-blend';
   if (n.includes('tesamorelin') && n.includes('ipamorelin') && n.includes('12'))      return 'phoenix-blend-12-2';
   if (n.includes('tesamorelin') && n.includes('ipamorelin'))                          return 'phoenix-blend';
-  if (n.includes('wolverine') && (n.includes('blend') || n.includes('5mg')))          return 'wolverine-blend-5mg';
-  if (n.includes('wolverine'))                                                         return 'wolverine-stack';
+  // One Square item ("WOLVERINE BLEND") holds BOTH the 10/10 Stack and the 5/5
+  // Blend as separate variations. Map by the size in the item+variation name, not
+  // the item name (which always contains "blend") — otherwise the 10/10 variation's
+  // price gets tagged onto the 5/5 site id. See the per-variation loop below.
+  if (n.includes('wolverine')) {
+    if (n.includes('10mg/10mg') || n.includes('10/10') || n.includes('(10mg'))        return 'wolverine-stack';
+    if (n.includes('5mg/5mg')   || n.includes('5/5')   || n.includes('(5mg'))         return 'wolverine-blend-5mg';
+    return null; // size not present in the name — don't guess
+  }
   if (n.includes('cjc'))                                                               return 'cjc1295-ipamorelin';
 
   // ── Retatrutide — all sizes ───────────────────────────────────────────────
@@ -95,32 +102,32 @@ exports.handler = async () => {
     for (const obj of catalogItems) {
       if (obj.type !== 'ITEM') continue;
 
-      const name   = obj.item_data?.name || '';
-      const itemId = nameToId(name);
-      if (!itemId) continue;
-
+      const itemName   = obj.item_data?.name || '';
       const variations = obj.item_data?.variations || [];
-      let soldOut = false;
-      let price   = null;
 
+      // Map at the VARIATION level: a single Square item can hold multiple
+      // variations that belong to different site ids (e.g. the Wolverine 10/10
+      // Stack and 5/5 Blend), each with its own price. Matching on item+variation
+      // name assigns each variation's price to the correct site id.
       for (const variation of variations) {
+        const varName = variation.item_variation_data?.name || '';
+        const itemId  = nameToId(`${itemName} ${varName}`);
+        if (!itemId) continue;
+
         const overrides = variation.item_variation_data?.location_overrides || [];
         const match     = overrides.find(o => o.location_id === LOCATION_ID);
-        if (match?.sold_out === true) soldOut = true;
+        const soldOut   = match?.sold_out === true;
 
-        // Price money is in cents; take the first variation with a real price.
-        // Most items here are single-variation, so this is the item's price.
-        if (price === null) {
-          const amount = variation.item_variation_data?.price_money?.amount;
-          if (typeof amount === 'number' && amount > 0) price = amount / 100;
-        }
+        // Price money is in cents.
+        const amount = variation.item_variation_data?.price_money?.amount;
+        const price  = (typeof amount === 'number' && amount > 0) ? amount / 100 : null;
+
+        // Don't let a later variation/item silently overwrite an already-found
+        // sold-out flag or price for the same site id.
+        if (!result[itemId]) result[itemId] = { soldOut: false, price: null };
+        if (soldOut) result[itemId].soldOut = true;
+        if (result[itemId].price === null && price !== null) result[itemId].price = price;
       }
-
-      // Don't let a later, differently-named catalog item silently overwrite an
-      // already-found sold-out/price pair for the same site id.
-      if (!result[itemId]) result[itemId] = { soldOut: false, price: null };
-      if (soldOut) result[itemId].soldOut = true;
-      if (result[itemId].price === null) result[itemId].price = price;
     }
 
     return {

@@ -44,7 +44,7 @@ const CATALOG = {
   'nad-500mg':                  { name: 'NAD+ 500mg',                        price: 99  },
   'nad-1000mg':                 { name: 'NAD+ 1000mg',                       price: 140 },
   'melanotan-ii-10mg':          { name: 'Melanotan II 10mg',                 price: 65  },
-  'reconstitution-liquid-30ml': { name: 'Reconstitution Liquid 30ml',        price: 39  },
+  'reconstitution-liquid-30ml': { name: 'Reconstitution Liquid 30ml',        price: 40  },
   'wolverine-stack':            { name: 'Wolverine Stack',                   price: 115 },
   'wolverine-blend-5mg':        { name: 'Wolverine Blend 5mg/5mg',           price: 100 },
   'cjc1295-ipamorelin':         { name: 'CJC-1295 / Ipamorelin (No DAC)',    price: 99  },
@@ -90,23 +90,30 @@ function sanitizeShipping(rawAmount, fulfillment, subtotal) {
 
 // ── Inventory Adjustment ──────────────────────────────────────────────────────
 
+// Resolve a Square catalog name (item name + variation name) to a site id.
+// IMPORTANT: pass the COMBINED "item + variation" name — some Square items hold
+// multiple variations that belong to different site ids (e.g. the Wolverine
+// item's 10/10 Stack and 5/5 Blend), so the size must come from the variation.
 function nameToId(name) {
   const n = name.toLowerCase();
   if (n.includes('klow'))                                                      return 'klow-blend';
   if (n.includes('glow'))                                                      return 'glow-blend';
-  if (n.includes('phoenix') && n.includes('12'))                              return 'phoenix-blend-12-2';
+  if (n.includes('phoenix') && (n.includes('12') || n.includes('new')))       return 'phoenix-blend-12-2';
   if (n.includes('phoenix'))                                                   return 'phoenix-blend';
   if (n.includes('tesamorelin') && n.includes('ipamorelin') && n.includes('12')) return 'phoenix-blend-12-2';
   if (n.includes('tesamorelin') && n.includes('ipamorelin'))                  return 'phoenix-blend';
-  if (n.includes('wolverine') && (n.includes('blend') || n.includes('5mg'))) return 'wolverine-blend-5mg';
-  if (n.includes('wolverine'))                                                 return 'wolverine-stack';
+  if (n.includes('wolverine')) {
+    if (n.includes('10mg/10mg') || n.includes('10/10') || n.includes('(10mg')) return 'wolverine-stack';
+    if (n.includes('5mg/5mg')   || n.includes('5/5')   || n.includes('(5mg'))  return 'wolverine-blend-5mg';
+    return null; // size not present in the name — don't guess
+  }
   if (n.includes('cjc'))                                                       return 'cjc1295-ipamorelin';
   if (n.includes('ipamorelin'))                                                return 'ipamorelin-10mg';
   if (n.includes('retatrutide') && n.includes('24'))                           return 'retatrutide-24mg';
   if (n.includes('retatrutide') && n.includes('15'))                           return 'retatrutide-15mg';
-  if (n.includes('retatrutide') && n.includes('10'))                           return 'retatrutide-10mg';
   if (n.includes('retatrutide') && n.includes('12'))                           return 'retatrutide-12mg';
-  if (n.includes('retatrutide'))                                               return 'retatrutide-12mg';
+  if (n.includes('retatrutide') && n.includes('10'))                           return 'retatrutide-10mg';
+  if (n.includes('retatrutide'))                                               return null;
   if (n.includes('tesamorelin'))                                               return 'tesamorelin-10mg';
   if (n.includes('sermorelin'))                                                return 'sermorelin-10mg';
   if (n.includes('mots-c') || n.includes('mots c'))                           return 'mots-c-10mg';
@@ -137,12 +144,18 @@ async function adjustInventory(items) {
     cursor = data.cursor || null;
   } while (cursor);
 
+  // Build siteId -> Square variationId at the VARIATION level so a multi-variation
+  // item (e.g. Wolverine 10/10 Stack + 5/5 Blend) maps each variation to its own
+  // site id and its own Square variation id — otherwise an order for one variation
+  // would decrement the wrong variation's stock.
   const variationMap = {};
   for (const obj of catalogItems) {
     if (obj.type !== 'ITEM') continue;
-    const siteId    = nameToId(obj.item_data?.name || '');
-    const variation = obj.item_data?.variations?.[0];
-    if (siteId && variation?.id) variationMap[siteId] = variation.id;
+    const itemName = obj.item_data?.name || '';
+    for (const variation of (obj.item_data?.variations || [])) {
+      const siteId = nameToId(`${itemName} ${variation.item_variation_data?.name || ''}`);
+      if (siteId && variation.id && !variationMap[siteId]) variationMap[siteId] = variation.id;
+    }
   }
 
   const changes = items
