@@ -1,5 +1,16 @@
 // Netlify Function: get-inventory.js
-// Fetches Square catalog and returns a map of { data-item-id: true } for sold-out products.
+// Added 2026-07-22 (Round 2 — price-list sync): previously this only returned sold-out
+// flags. The site's displayed prices (product cards + the reference price-list table)
+// were static HTML, so whenever a price changed in Square, the site quietly drifted out
+// of sync until someone manually caught and fixed it. Now the same live Square fetch this
+// function already does also returns each item's current price, and the frontend
+// (syncInventory() in index.html) overwrites every displayed price from this on load —
+// so the site can't drift from Square again for any item Square actually has under a
+// recognized name. New products still need one manual line added (see nameToId below);
+// this only prevents EXISTING items from silently going stale.
+//
+// Response shape: { [itemId]: { soldOut: boolean, price: number|null } }
+// (was: { [itemId]: true } for sold-out items only — frontend updated to match.)
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
@@ -79,7 +90,7 @@ exports.handler = async () => {
 
   try {
     const catalogItems = await fetchAllCatalogItems();
-    const soldOut = {};
+    const result = {};
 
     for (const obj of catalogItems) {
       if (obj.type !== 'ITEM') continue;
@@ -89,14 +100,27 @@ exports.handler = async () => {
       if (!itemId) continue;
 
       const variations = obj.item_data?.variations || [];
+      let soldOut = false;
+      let price   = null;
+
       for (const variation of variations) {
         const overrides = variation.item_variation_data?.location_overrides || [];
         const match     = overrides.find(o => o.location_id === LOCATION_ID);
-        if (match?.sold_out === true) {
-          soldOut[itemId] = true;
-          break;
+        if (match?.sold_out === true) soldOut = true;
+
+        // Price money is in cents; take the first variation with a real price.
+        // Most items here are single-variation, so this is the item's price.
+        if (price === null) {
+          const amount = variation.item_variation_data?.price_money?.amount;
+          if (typeof amount === 'number' && amount > 0) price = amount / 100;
         }
       }
+
+      // Don't let a later, differently-named catalog item silently overwrite an
+      // already-found sold-out/price pair for the same site id.
+      if (!result[itemId]) result[itemId] = { soldOut: false, price: null };
+      if (soldOut) result[itemId].soldOut = true;
+      if (result[itemId].price === null) result[itemId].price = price;
     }
 
     return {
@@ -105,7 +129,7 @@ exports.handler = async () => {
         'Content-Type': 'application/json',
         'Cache-Control': 'public, max-age=300',
       },
-      body: JSON.stringify(soldOut),
+      body: JSON.stringify(result),
     };
   } catch (err) {
     console.error('get-inventory error:', err.message);

@@ -14,7 +14,10 @@
 
 ## Tech Stack
 - **Frontend:** Static HTML/CSS/JS — `index.html`
-- **Hosting:** Netlify (drag-and-drop deploy or `netlify deploy --prod`)
+- **Hosting:** Netlify — **GitHub-connected continuous deployment**: push to `main` on
+  `alexanderranch3/The-Forge-Peptides-Website` auto-deploys (confirmed working since 2026-07-14,
+  see `Runs/ship-a-change.md` in the vault). Manual `netlify deploy --prod` / drag-and-drop still
+  work as a fallback but aren't the normal path anymore.
 - **Backend:** Netlify Functions (Node.js) in `netlify/functions/`
 - **Payments/Records:** Square API v2 (2024-01-18)
 - **Customer Payment Method:** Zelle only — @forgepeptides
@@ -118,11 +121,14 @@ forge-peptides-website/
 ---
 
 ## Deployment
-**Option A (CLI):**
+**Normal path:** `git push origin main` — Netlify is GitHub-connected and auto-deploys on push.
+Confirmed working since 2026-07-14.
+
+**Fallback (CLI), if auto-deploy ever doesn't fire:**
 ```bash
 cd ~/Desktop/forge-peptides-website && netlify deploy --prod
 ```
-**Option B (drag-and-drop):**  
+**Fallback (drag-and-drop):**
 Go to https://app.netlify.com/projects/theforgepeptides/deploys → drag the `forge-peptides-website` folder
 
 > Note: Netlify CLI has thrown `Forbidden` errors in the past. If that happens, use drag-and-drop.
@@ -150,8 +156,8 @@ Go to https://app.netlify.com/projects/theforgepeptides/deploys → drag the `fo
 ---
 
 ## Security Notes
-- Two Netlify tokens were accidentally exposed in chat (now revoked):
-  - `nfp_MqzU5F7sTfziDzt1QACiaN9S9xnEYPNf975d`
-  - `nfp_Sy3hcoRoLF5M87eaZvXigBa5cRZCERZ3e5d4`
+- Two Netlify tokens were accidentally exposed in chat in the past (revoked — literal values
+  scrubbed from this file 2026-07-22; they'd been sitting in git history since the initial
+  commit, same exposure pattern as the old admin password)
 - Always set credentials in Netlify dashboard → Environment Variables only
 - Never paste Square Access Token or Netlify tokens in chat
