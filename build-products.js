@@ -234,6 +234,17 @@ function main() {
   }
 
   console.log(`\n${written.length} page(s) written to /products/. Compliance gate passed.`);
+
+  // Cross-source price parity: run check-prices.js so regenerating pages also
+  // verifies index.html / products.json / create-invoice.js still agree. Pages
+  // are already written; a failure here exits non-zero so drift can't be missed.
+  console.log('\n— Running price parity check —');
+  try {
+    require('child_process').execFileSync('node', [path.join(ROOT, 'check-prices.js')], { stdio: 'inherit' });
+  } catch (e) {
+    console.error('\n⚠  Price parity check FAILED (see above). Fix the drift before deploying.');
+    process.exitCode = 1;
+  }
 }
 
 main();

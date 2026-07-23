@@ -33,13 +33,43 @@ forge-peptides-website/
 ├── sitemap.xml                       # Google indexing
 ├── robots.txt                        # Google indexing
 ├── PROJECT-NOTES.md                  # This file
+├── products.json                     # SINGLE SOURCE for product landing pages (8 hero families)
+├── product-template.html             # Shell for generated pages (RUO/21+/disclaimer hardcoded here)
+├── build-products.js                 # Local generator → writes /products/*.html (has compliance gate)
+├── check-prices.js                   # Price-drift gate across the 3 price sources
+├── products/                         # GENERATED landing pages — do NOT hand-edit
+│   ├── retatrutide.html   ├── phoenix-blend.html   ├── glow-blend.html
+│   ├── wolverine.html     ├── cjc-1295-ipamorelin.html
+│   ├── nad-plus.html      ├── tesamorelin.html     └── ghk-cu.html
 └── netlify/
     └── functions/
-        ├── create-invoice.js         # Square order + invoice creation
+        ├── create-invoice.js         # Square order + invoice creation (CATALOG = price source of truth)
         ├── get-inventory.js          # Square catalog inventory sync
         ├── get-shipping-rates.js     # Shippo real-time USPS + UPS rates
         └── get-orders.js             # Admin dashboard — fetches Square invoices + orders
 ```
+
+---
+
+## Product Landing Pages & Maintenance Gates
+
+Landing pages under `/products/` are GENERATED — never hand-edit them. Edit the data
+in `products.json`, then regenerate. Two guard scripts keep the site honest; run them
+before any deploy that touches product copy or pricing (both are plain `node`, no deps):
+
+- **`node build-products.js`** — regenerates all 8 landing pages from `products.json` +
+  `product-template.html`. Has a hard **compliance gate**: scans each rendered page for
+  banned phrases (dose, inject, results, weight loss, etc.) and refuses to write +
+  exits non-zero if any appear. It also runs the price check automatically at the end.
+- **`node check-prices.js`** — verifies every displayed price (index.html cards, variant
+  chips, price list, and products.json) matches `create-invoice.js`'s CATALOG, which is
+  the source of truth (what the customer is actually charged). Exits non-zero on any
+  mismatch, naming the id + wrong value + correct value.
+
+⚠️ Prices currently live in THREE places (index.html, products.json, create-invoice.js
+CATALOG). They must agree — `check-prices.js` enforces that. Unifying them to one source
+is a planned later refactor; until then, a price change means editing all three and
+re-running the check.
 
 ---
 
