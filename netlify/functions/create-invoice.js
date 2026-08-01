@@ -25,8 +25,7 @@ function idempotencyKey() {
 class ValidationError extends Error {}
 
 const CATALOG = {
-  'retatrutide-10mg':           { name: 'Retatrutide 10mg',                  price: 155 },
-  'retatrutide-12mg':           { name: 'Retatrutide 12mg',                  price: 160 },
+  'retatrutide-10mg':           { name: 'Retatrutide 10mg',                  price: 160 },
   'retatrutide-15mg':           { name: 'Retatrutide 15mg',                  price: 185 },
   'retatrutide-24mg':           { name: 'Retatrutide 24mg',                  price: 245 },
   'tesamorelin-10mg':           { name: 'Tesamorelin 10mg',                  price: 89  },
@@ -36,7 +35,6 @@ const CATALOG = {
   'ghk-cu-50mg':                { name: 'GHK-Cu 50mg',                       price: 75  },
   'ghk-cu-100mg':               { name: 'GHK-Cu 100mg',                      price: 85  },
   'ss-31-10mg':                 { name: 'SS-31 10mg',                        price: 82  },
-  'semax-selank':               { name: 'Semax / Selank',                    price: 95  },
   'semax-10mg':                 { name: 'Semax 10mg',                        price: 99  },
   'selank-10mg':                { name: 'Selank 10mg',                       price: 95  },
   'dsip-5mg':                   { name: 'DSIP 5mg',                          price: 62  },
@@ -111,7 +109,6 @@ function nameToId(name) {
   if (n.includes('ipamorelin'))                                                return 'ipamorelin-10mg';
   if (n.includes('retatrutide') && n.includes('24'))                           return 'retatrutide-24mg';
   if (n.includes('retatrutide') && n.includes('15'))                           return 'retatrutide-15mg';
-  if (n.includes('retatrutide') && n.includes('12'))                           return 'retatrutide-12mg';
   if (n.includes('retatrutide') && n.includes('10'))                           return 'retatrutide-10mg';
   if (n.includes('retatrutide'))                                               return null;
   if (n.includes('tesamorelin'))                                               return 'tesamorelin-10mg';
@@ -120,7 +117,6 @@ function nameToId(name) {
   if ((n.includes('ghk-cu') || n.includes('ghk cu')) && n.includes('50'))    return 'ghk-cu-50mg';
   if (n.includes('ghk-cu') || n.includes('ghk cu'))                           return 'ghk-cu-100mg';
   if (n.includes('ss-31') || n.includes('ss31') || n.includes('elamipretide')) return 'ss-31-10mg';
-  if (n.includes('semax') && n.includes('selank'))                            return 'semax-selank';
   if (n.includes('semax'))                                                     return 'semax-10mg';
   if (n.includes('selank'))                                                    return 'selank-10mg';
   if (n.includes('dsip'))                                                      return 'dsip-5mg';

@@ -40,7 +40,6 @@ function nameToId(name) {
   // ── Retatrutide — all sizes ───────────────────────────────────────────────
   if (n.includes('retatrutide') && n.includes('24'))                                  return 'retatrutide-24mg';
   if (n.includes('retatrutide') && n.includes('15'))                                  return 'retatrutide-15mg';
-  if (n.includes('retatrutide') && n.includes('12'))                                  return 'retatrutide-12mg';
   if (n.includes('retatrutide') && n.includes('10'))                                  return 'retatrutide-10mg';
   if (n.includes('retatrutide'))                                                       return null;
 
@@ -54,7 +53,6 @@ function nameToId(name) {
   if ((n.includes('ghk-cu') || n.includes('ghk cu')) && n.includes('50'))             return 'ghk-cu-50mg';
   if (n.includes('ghk-cu') || n.includes('ghk cu'))                                   return 'ghk-cu-100mg';
   if (n.includes('ss-31') || n.includes('ss31') || n.includes('elamipretide'))        return 'ss-31-10mg';
-  if (n.includes('semax') && n.includes('selank'))                                    return 'semax-selank';
   if (n.includes('semax'))                                                             return 'semax-10mg';
   if (n.includes('selank'))                                                            return 'selank-10mg';
   if (n.includes('dsip'))                                                              return 'dsip-5mg';
