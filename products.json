@@ -18,7 +18,7 @@
       "metaDescription": "Retatrutide (LY3437943) trispecific GIP/GLP-1/glucagon receptor agonist for in-vitro research. Available in 10mg, 15mg and 24mg vials at ≥98% HPLC purity. For research use only.",
       "sizes": [
         { "id": "retatrutide-10mg", "label": "10mg", "price": 160 },
-        { "id": "retatrutide-15mg", "label": "15mg", "price": 185 },
+        { "id": "retatrutide-15mg", "label": "15mg", "price": 195 },
         { "id": "retatrutide-24mg", "label": "24mg", "price": 245 }
       ],
       "schemaDescription": "Trispecific GIP/GLP-1/glucagon receptor agonist (LY3437943). Studied for its role in energy balance, adipose reduction, and glycemic regulation via simultaneous multi-receptor engagement. Available in 10mg, 15mg, and 24mg vials. For in-vitro research use only.",
@@ -34,7 +34,7 @@
         { "k": "Testing", "v": "Third-party lab verified" }
       ],
       "faq": [
-        { "q": "What sizes of Retatrutide are available?", "a": "Retatrutide is stocked in 10mg, 15mg, and 24mg vials so research groups can match vial quantity to study scale. Pricing is $160, $185, and $245 respectively." },
+        { "q": "What sizes of Retatrutide are available?", "a": "Retatrutide is stocked in 10mg, 15mg, and 24mg vials so research groups can match vial quantity to study scale. Pricing is $160, $195, and $245 respectively." },
         { "q": "Is a Certificate of Analysis available for Retatrutide?", "a": "Yes. Every batch is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com with the vial size to request the matching COA." },
         { "q": "How is Retatrutide shipped and stored?", "a": "Vials ship lyophilized. Store them cool, dry, and away from direct light; refrigeration is recommended for longer-term laboratory storage. This is research material for in-vitro use only." }
       ]
