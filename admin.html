@@ -291,8 +291,12 @@ async function loadOrders() {
   }
 }
 
+// Statuses that mean "money hasn't landed yet". Legacy values are the old Square
+// invoice states, kept so orders from before 2026-08-13 still count correctly.
+const AWAITING_STATUSES = ['AWAITING_ZELLE', 'DRAFT', 'UNPUBLISHED', 'SENT', 'PAYMENT_PENDING'];
+
 function updateStats() {
-  const sent    = allOrders.filter(o => o.status === 'SENT').length;
+  const sent    = allOrders.filter(o => AWAITING_STATUSES.includes(o.status)).length;
   const paid    = allOrders.filter(o => o.status === 'PAID').length;
   const revenue = allOrders
     .filter(o => o.status === 'PAID')
@@ -310,8 +314,7 @@ function renderTable() {
   const fulfillF   = document.getElementById('fulfillment-filter').value;
 
   let orders = allOrders;
-  const awaitingStatuses = ['DRAFT', 'UNPUBLISHED', 'SENT', 'PAYMENT_PENDING'];
-  if (statusF === 'AWAITING') orders = orders.filter(o => awaitingStatuses.includes(o.status));
+  if (statusF === 'AWAITING') orders = orders.filter(o => AWAITING_STATUSES.includes(o.status));
   else if (statusF !== 'ALL') orders = orders.filter(o => o.status === statusF);
   if (fulfillF !== 'ALL') orders = orders.filter(o => o.fulfillmentType === fulfillF);
 
@@ -356,10 +359,10 @@ function renderTable() {
       : '';
 
     return `
-      <tr data-id="${esc(order.invoiceId)}">
-        <td><input type="checkbox" class="cb order-cb" data-id="${esc(order.invoiceId)}"></td>
+      <tr data-id="${esc(order.orderId)}">
+        <td><input type="checkbox" class="cb order-cb" data-id="${esc(order.orderId)}"></td>
         <td style="white-space:nowrap;color:#888;">${date}</td>
-        <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.invoiceNumber)}</td>
+        <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.orderNumber)}</td>
         <td>${badge}${order.fulfillmentType === 'SHIP'
           ? '<div class="fulfillment">🚚 Ship</div>'
           : '<div class="fulfillment">📦 Pickup</div>'}</td>
@@ -384,6 +387,9 @@ function renderTable() {
         </td>
         <td>
           <div class="actions">
+            ${order.status === 'PAID'
+              ? `<button class="btn btn-sm btn-copy" onclick="setPaid('${esc(order.orderId)}','AWAITING_ZELLE')" title="Undo — mark this order unpaid again">Undo Paid</button>`
+              : `<button class="btn btn-sm btn-green" onclick="setPaid('${esc(order.orderId)}','PAID')">Mark Paid</button>`}
             ${order.shipTo ? `
               <button class="btn btn-sm btn-copy" onclick="copyAddress('${esc(addrOneLiner)}')">Copy Addr</button>
             ` : ''}
@@ -394,8 +400,49 @@ function renderTable() {
   }).join('');
 }
 
+// ── Mark Paid ─────────────────────────────────────────────────────────────────
+// Writes the Zelle payment flag onto the Square order's metadata via
+// set-order-status.js. Square invoices used to carry this; the account was
+// deactivated 2026-08-12 so the flag lives on the order now.
+// Updates the row optimistically, then rolls back if Square rejects it.
+async function setPaid(orderId, status) {
+  const order = allOrders.find(o => o.orderId === orderId);
+  if (!order) return;
+
+  const previous = order.status;
+  order.status = status;
+  updateStats();
+  renderTable();
+
+  try {
+    const res = await fetch('/.netlify/functions/set-order-status', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({ orderId, status }),
+    });
+
+    if (res.status === 401) { showLogin(); return; }
+
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+
+    showToast(status === 'PAID'
+      ? `${order.orderNumber || 'Order'} marked paid`
+      : `${order.orderNumber || 'Order'} back to awaiting Zelle`);
+  } catch (err) {
+    order.status = previous; // Square didn't take it — put the row back
+    updateStats();
+    renderTable();
+    showToast('Could not update: ' + err.message);
+  }
+}
+
 function statusBadge(status) {
   const map = {
+    AWAITING_ZELLE: ['badge-sent',    'Awaiting Zelle'],
     DRAFT:          ['badge-sent',    'Awaiting Zelle'],
     UNPUBLISHED:    ['badge-sent',    'Awaiting Zelle'],
     SENT:           ['badge-sent',    'Awaiting Zelle'],
@@ -424,7 +471,7 @@ function getSelectedOrders() {
     [...document.querySelectorAll('.order-cb:checked')].map(cb => cb.dataset.id)
   );
   return selectedIds.size > 0
-    ? allOrders.filter(o => selectedIds.has(o.invoiceId))
+    ? allOrders.filter(o => selectedIds.has(o.orderId))
     : allOrders.filter(o => o.fulfillmentType === 'SHIP'); // default: all shippable
 }
 
@@ -459,7 +506,7 @@ function exportCSV() {
     PKG_WIDTH,
     PKG_HEIGHT,
     'Package',
-    o.invoiceNumber,             // Reference 1 = order number
+    o.orderNumber,             // Reference 1 = order number
     o.items.map(i => `${i.qty}x ${i.name}`).join('; '), // Reference 2 = items
   ]);
 

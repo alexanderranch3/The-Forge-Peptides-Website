@@ -1,6 +1,27 @@
 // Netlify Function: create-invoice.js
-// Creates a Square order + sends a Square invoice receipt via email.
-// Invoice is a RECEIPT ONLY — payment is Zelle-only, not through Square.
+// Creates a Square ORDER (record-keeping + inventory) and returns an order number.
+// Payment is Zelle-only and always was — Square never processed a cent of it.
+//
+// ── 2026-08-13: SQUARE INVOICING REMOVED — DO NOT ADD IT BACK ────────────────
+// On 2026-08-12 Square deactivated this account for a Terms of Service
+// violation (Section 3 General Terms / Section 3 Payment Terms). The Invoices
+// API now hard-fails on every call with:
+//
+//   BAD_REQUEST / INVALID_REQUEST_ERROR
+//   "This account has not been enabled to take payments"
+//
+// That one failing call took the whole checkout down: the order was created
+// fine, then the invoice threw, the handler returned 500, and the customer saw
+// a generic error. 14 real orders were lost on 2026-08-13 before it was caught.
+//
+// Verified still working on the deactivated account: catalog read, customer
+// create, order create, inventory adjustment. Only payment-related endpoints
+// are blocked. So Square stays the inventory + order system of record and
+// invoicing is gone. The order number is generated here now, not by Square.
+//
+// RULE: creating the order is the ONLY step allowed to fail this request.
+// Every other Square call is best-effort and must be wrapped.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
@@ -16,6 +37,15 @@ function squareHeaders() {
 
 function idempotencyKey() {
   return `forge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Order number shown to the customer and used as their Zelle memo.
+// Format is unchanged from the old Square invoice numbers (FP-######) so past
+// and future orders read the same in Zelle memos and in the dashboard.
+// Square enforced uniqueness on invoice_number; reference_id has no such
+// constraint, so a collision here is cosmetic rather than a failed checkout.
+function orderNumber() {
+  return `FP-${Date.now().toString().slice(-6)}`;
 }
 
 // ── Server-Side Catalog (source of truth for prices) ──────────────────────────
@@ -217,22 +247,36 @@ async function validatePromo(promoCode, customerId) {
   // LOYAL10 — 10% off every order, no restrictions
   if (promoCode === 'LOYAL10') return 'LOYAL10';
 
-  // FORGE10 — 10% off first order only
+  // FORGE10 — 10% off first order only.
+  // Was: counted the customer's past INVOICES. Since 2026-08-13 no invoices are
+  // created at all, so that check would return "first order" forever and let
+  // anyone reuse FORGE10 on every purchase. Count past ORDERS instead.
   if (promoCode === 'FORGE10') {
-    const res  = await fetch(`${SQUARE_API}/invoices/search`, {
-      method: 'POST',
-      headers: squareHeaders(),
-      body: JSON.stringify({
-        query: {
-          filter: { location_ids: [LOCATION_ID], customer_ids: [customerId] },
-          sort: { field: 'INVOICE_SORT_DATE', order: 'DESC' },
-        },
-        limit: 1,
-      }),
-    });
-    const data = await res.json();
-    const isFirstOrder = !(data.invoices && data.invoices.length > 0);
-    return isFirstOrder ? 'FORGE10' : null;
+    try {
+      const res  = await fetch(`${SQUARE_API}/orders/search`, {
+        method: 'POST',
+        headers: squareHeaders(),
+        body: JSON.stringify({
+          location_ids: [LOCATION_ID],
+          query: {
+            filter: { customer_filter: { customer_ids: [customerId] } },
+            sort:   { sort_field: 'CREATED_AT', sort_order: 'DESC' },
+          },
+          limit: 1,
+        }),
+      });
+      const data = await res.json();
+      if (data.errors) {
+        // Can't verify — deny the discount rather than hand out a repeatable one.
+        console.error('FORGE10 order lookup failed:', JSON.stringify(data.errors));
+        return null;
+      }
+      const isFirstOrder = !(data.orders && data.orders.length > 0);
+      return isFirstOrder ? 'FORGE10' : null;
+    } catch (err) {
+      console.error('FORGE10 order lookup threw:', err.message);
+      return null;
+    }
   }
 
   return null; // invalid code
@@ -243,7 +287,7 @@ async function validatePromo(promoCode, customerId) {
 const FL_TAX_RATE = 7.0; // Florida state (6%) + Miami-Dade county surtax (1%)
 const FL_TAX_UID  = 'fl-sales-tax';
 
-async function createOrder(customerId, items, shippingAmount, shippingLabel, promoValid, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip) {
+async function createOrder(orderNum, customerId, items, shippingAmount, shippingLabel, promoValid, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip, notes) {
   // Local pickup is always FL; shipping applies tax only when destination is FL
   const applyFlTax = fulfillment === 'Local Pickup' || (state || '').toUpperCase() === 'FL';
 
@@ -297,9 +341,31 @@ async function createOrder(customerId, items, shippingAmount, shippingLabel, pro
         },
       }];
 
+  // reference_id surfaces the FP- number directly in the Square dashboard and
+  // in /admin.html. metadata carries everything the old invoice description
+  // used to hold — most importantly payment_status, which is the Awaiting-Zelle
+  // vs Paid flag the dashboard reads and writes (see set-order-status.js).
+  // Square caps metadata at 10 keys, 60-char keys, 255-char values.
+  const metadata = {
+    forge_order_number: orderNum,
+    payment_status:     'AWAITING_ZELLE',
+    payment_method:     'ZELLE',
+    fulfillment_type:   fulfillment === 'Ship' ? 'SHIP' : 'LOCAL_PICKUP',
+  };
+  if (promoValid)    metadata.promo_code    = promoValid;
+  if (shippingLabel) metadata.shipping_label = String(shippingLabel).slice(0, 255);
+  if (notes)         metadata.customer_note  = String(notes).slice(0, 255);
+
   const orderBody = {
     idempotency_key: idempotencyKey(),
-    order: { location_id: LOCATION_ID, customer_id: customerId, line_items: lineItems, fulfillments },
+    order: {
+      location_id:  LOCATION_ID,
+      customer_id:  customerId,
+      reference_id: orderNum,
+      line_items:   lineItems,
+      fulfillments,
+      metadata,
+    },
   };
 
   // Florida sales tax: 7% on product line items only (not shipping)
@@ -331,60 +397,115 @@ async function createOrder(customerId, items, shippingAmount, shippingLabel, pro
   return data.order;
 }
 
-// ── Invoice Receipt ───────────────────────────────────────────────────────────
+// (The Square invoice step lived here until 2026-08-13. See the header comment
+// for why it was removed and why it must not come back while the account is
+// deactivated.)
 
-async function createInvoice(customerId, orderId, notes, promoValid, shippingAmount, fulfillment, address) {
-  const invoiceNum = `FP-${Date.now().toString().slice(-6)}`;
+// ── Confirmation Email ────────────────────────────────────────────────────────
+// Replaces the Square invoice email that used to notify BOTH the customer and
+// Frank that an order existed. Fully inert until RESEND_API_KEY is set in
+// Netlify — checkout works with or without it, this just adds the paper trail.
+//
+// Setup: resend.com → verify theforgepeptides.com as a sending domain (3 DNS
+// records) → put the key in Netlify as RESEND_API_KEY. Optionally override
+// ORDER_FROM_EMAIL and ORDER_NOTIFY_EMAIL.
 
-  const fulfillmentLine = fulfillment === 'Local Pickup'
-    ? 'Fulfillment: Local Pickup — we will contact you to arrange pickup.'
-    : `Ship to: ${address || 'address on file'}`;
+const RESEND_KEY   = process.env.RESEND_API_KEY;
+const FROM_EMAIL   = process.env.ORDER_FROM_EMAIL   || 'The Forge Peptides <orders@theforgepeptides.com>';
+const NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || 'alexanderranch3@gmail.com';
 
-  const desc = [
-    `Order #${invoiceNum} — The Forge Peptides`,
-    '',
-    'PAYMENT — ZELLE ONLY',
-    `Send payment to @forgepeptides via Zelle.`,
-    `Memo: ${invoiceNum}`,
-    '',
-    'Your order will NOT be processed until Zelle payment is confirmed.',
-    '',
-    fulfillmentLine,
-  ];
+const money = cents => `$${((cents || 0) / 100).toFixed(2)}`;
+const esc   = s => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  if (promoValid === 'LOYAL10') desc.push('', 'LOYAL10 discount (10% off) applied.');
-  if (promoValid === 'FORGE10') desc.push('', 'FORGE10 discount (10% off) applied.');
-  if (shippingAmount === 0)     desc.push('Free shipping applied.');
-  if (notes)                    desc.push('', `Order notes: ${notes}`);
-  desc.push('', 'Questions? theforgepeptides.com');
-  desc.push('All products are sold for in-vitro research purposes only. Must be 21+.');
-
-  const invoiceRes = await fetch(`${SQUARE_API}/invoices`, {
+async function resendSend(payload) {
+  const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: squareHeaders(),
-    body: JSON.stringify({
-      idempotency_key: idempotencyKey(),
-      invoice: {
-        location_id:       LOCATION_ID,
-        order_id:          orderId,
-        primary_recipient: { customer_id: customerId },
-        payment_requests: [{
-          request_type:             'BALANCE',
-          due_date:                 new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          automatic_payment_source: 'NONE',
-        }],
-        accepted_payment_methods: { bank_account: true },
-        delivery_method:  'EMAIL', // Square will send receipt when Frank marks invoice paid — no email sent until then (invoice stays DRAFT)
-        invoice_number:   invoiceNum,
-        title:            'The Forge Peptides — Order Receipt',
-        description:      desc.join('\n'),
-      },
-    }),
+    headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-  const invoiceData = await invoiceRes.json();
-  if (!invoiceData.invoice) throw new Error('Failed to create invoice: ' + JSON.stringify(invoiceData));
-  // Invoice stays as DRAFT — Square will send the receipt automatically when Frank marks it paid in Square dashboard
-  return invoiceData.invoice;
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+function orderSummaryHtml(order) {
+  const rows = (order.line_items || []).map(li => `
+    <tr>
+      <td style="padding:8px 0;color:#ddd;">${esc(li.name)} ${li.quantity > 1 ? `&times;${esc(li.quantity)}` : ''}</td>
+      <td style="padding:8px 0;text-align:right;color:#ddd;">${money(li.total_money?.amount)}</td>
+    </tr>`).join('');
+
+  const extras = [];
+  if (order.total_discount_money?.amount) {
+    extras.push(`<tr><td style="padding:4px 0;color:#28a745;">Discount</td><td style="padding:4px 0;text-align:right;color:#28a745;">&minus;${money(order.total_discount_money.amount)}</td></tr>`);
+  }
+  if (order.total_tax_money?.amount) {
+    extras.push(`<tr><td style="padding:4px 0;color:#888;">Florida Sales Tax</td><td style="padding:4px 0;text-align:right;color:#888;">${money(order.total_tax_money.amount)}</td></tr>`);
+  }
+
+  return `${rows}${extras.join('')}
+    <tr><td style="padding:12px 0 0;border-top:1px solid #333;color:#fff;font-weight:700;">Total</td>
+        <td style="padding:12px 0 0;border-top:1px solid #333;text-align:right;color:#FF6A00;font-weight:700;font-size:1.1em;">${money(order.total_money?.amount)}</td></tr>`;
+}
+
+async function sendConfirmationEmail({ orderNum, customerName, customerEmail, customerPhone, fulfillment, address, notes, order }) {
+  if (!RESEND_KEY) return; // not configured — silently skip
+
+  const isPickup = fulfillment === 'Local Pickup';
+  const summary  = orderSummaryHtml(order);
+
+  const customerHtml = `
+  <div style="background:#0d0d0d;padding:32px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="max-width:520px;margin:0 auto;background:#161616;border:1px solid rgba(255,106,0,0.25);border-radius:12px;padding:32px;">
+      <h1 style="color:#FF6A00;font-size:1.3rem;margin:0 0 4px;">Order received</h1>
+      <p style="color:#888;font-size:0.9rem;margin:0 0 24px;">Order <strong style="color:#FF6A00;">${esc(orderNum)}</strong></p>
+
+      <p style="color:#ddd;font-size:0.95rem;margin:0 0 20px;">Thanks ${esc(customerName.split(' ')[0])} — we've got your order. It ships once payment lands.</p>
+
+      <div style="background:#0d0d0d;border:1px solid rgba(255,106,0,0.3);border-radius:8px;padding:18px;margin-bottom:22px;">
+        <div style="color:#FF6A00;font-weight:700;font-size:0.95rem;margin-bottom:10px;">PAYMENT — ZELLE ONLY</div>
+        <div style="color:#ddd;font-size:0.9rem;line-height:1.7;">
+          1. Open your banking app and choose Zelle<br/>
+          2. Send <strong style="color:#fff;">${money(order.total_money?.amount)}</strong> to <strong style="color:#fff;">@forgepeptides</strong><br/>
+          3. Put <strong style="color:#FF6A00;">${esc(orderNum)}</strong> in the memo
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;font-size:0.9rem;margin-bottom:22px;">${summary}</table>
+
+      <p style="color:#888;font-size:0.85rem;margin:0 0 6px;">
+        ${isPickup ? 'Local pickup — we\'ll reach out to arrange a time.' : `Shipping to: ${esc(address || 'address on file')}`}
+      </p>
+      <p style="color:#666;font-size:0.78rem;margin:18px 0 0;border-top:1px solid #262626;padding-top:16px;">
+        Your order is not processed until Zelle payment is confirmed.<br/>
+        All products are sold for in-vitro research purposes only. Must be 21+.<br/>
+        theforgepeptides.com
+      </p>
+    </div>
+  </div>`;
+
+  const ownerHtml = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;">
+    <h2 style="color:#c44d00;margin:0 0 12px;">New order ${esc(orderNum)} — ${money(order.total_money?.amount)}</h2>
+    <p style="margin:0 0 4px;"><strong>${esc(customerName)}</strong></p>
+    <p style="margin:0 0 4px;">${esc(customerEmail)} · ${esc(customerPhone || 'no phone')}</p>
+    <p style="margin:0 0 16px;">${isPickup ? 'LOCAL PICKUP' : `SHIP TO: ${esc(address || '—')}`}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">${summary}</table>
+    ${notes ? `<p style="margin:16px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>` : ''}
+    <p style="margin:16px 0 0;color:#666;font-size:0.8rem;">Awaiting Zelle. Mark paid at theforgepeptides.com/admin.html</p>
+  </div>`;
+
+  // Customer first — their copy matters more than the owner alert.
+  await resendSend({
+    from: FROM_EMAIL, to: [customerEmail],
+    subject: `Order ${orderNum} received — payment instructions inside`,
+    html: customerHtml,
+  });
+
+  await resendSend({
+    from: FROM_EMAIL, to: [NOTIFY_EMAIL],
+    subject: `New order ${orderNum} — ${customerName} — ${money(order.total_money?.amount)}`,
+    html: ownerHtml,
+  });
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -411,19 +532,49 @@ exports.handler = async (event) => {
     const shipping   = sanitizeShipping(shippingAmount, fulfillment, subtotal);
     const shipLabel  = shippingLabel ? String(shippingLabel).slice(0, 80) : null;
 
+    const orderNum   = orderNumber();
     const customerId = await findOrCreateCustomer(customerName, customerEmail, customerPhone);
     const validPromo = await validatePromo(promoCode, customerId);
-    const order      = await createOrder(customerId, cleanItems, shipping, shipLabel, validPromo, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip);
-    const invoice    = await createInvoice(customerId, order.id, notes, validPromo, shipping, fulfillment, address);
-    await adjustInventory(cleanItems); // deduct from Square inventory
+    const order      = await createOrder(
+      orderNum, customerId, cleanItems, shipping, shipLabel, validPromo,
+      fulfillment, customerName, customerEmail, customerPhone,
+      street, city, state, zip, notes
+    );
+
+    // ── Past this point the order EXISTS and the sale is real. Nothing below is
+    // allowed to turn a placed order into an error screen for the customer.
+    // Failures here get logged for Frank to reconcile, never surfaced.
+
+    // Deduct stock. Verified working on the deactivated Square account
+    // (2026-08-13), but wrapped regardless — a stock-sync problem is a
+    // bookkeeping issue, not a reason to reject a paying customer.
+    try {
+      await adjustInventory(cleanItems);
+    } catch (invErr) {
+      console.error(`INVENTORY NOT DEDUCTED for ${orderNum}:`, invErr.message);
+    }
+
+    // Confirmation email — no-op until RESEND_API_KEY is configured in Netlify.
+    try {
+      await sendConfirmationEmail({
+        orderNum, customerName, customerEmail, customerPhone,
+        items: cleanItems, promo: validPromo, fulfillment, address, notes,
+        order, // Square already computed tax/discount/total — don't recompute
+      });
+    } catch (mailErr) {
+      console.error(`CONFIRMATION EMAIL FAILED for ${orderNum}:`, mailErr.message);
+    }
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success:       true,
-        invoiceNumber: invoice.invoice_number,
-        invoiceId:     invoice.id,
+        // Kept as `invoiceNumber` so the existing success screen in index.html
+        // keeps working untouched. `orderNumber` is the name to prefer going forward.
+        invoiceNumber: orderNum,
+        orderNumber:   orderNum,
+        orderId:       order.id,
         promoApplied:  validPromo,
       }),
     };
