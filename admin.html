@@ -429,9 +429,16 @@ async function setPaid(orderId, status) {
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
 
-    showToast(status === 'PAID'
-      ? `${order.orderNumber || 'Order'} marked paid`
-      : `${order.orderNumber || 'Order'} back to awaiting Zelle`);
+    // Marking paid also records the Zelle payment as a real Square tender, so
+    // Square's sales reports stay accurate. If that leg failed the order is
+    // still marked paid here — say so, rather than let the books drift quietly.
+    if (status === 'PAID') {
+      showToast(data.tenderRecorded
+        ? `${order.orderNumber || 'Order'} marked paid — recorded in Square`
+        : `${order.orderNumber || 'Order'} marked paid — ⚠️ payment NOT recorded in Square, add it manually`);
+    } else {
+      showToast(`${order.orderNumber || 'Order'} back to awaiting Zelle`);
+    }
   } catch (err) {
     order.status = previous; // Square didn't take it — put the row back
     updateStats();

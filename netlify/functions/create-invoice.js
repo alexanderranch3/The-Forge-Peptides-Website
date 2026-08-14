@@ -428,10 +428,21 @@ async function resendSend(payload) {
 }
 
 function orderSummaryHtml(order) {
+  // Line amount must be the PRE-TAX, PRE-DISCOUNT figure.
+  //
+  // Bug fixed 2026-08-14: this used `li.total_money`, which Square computes
+  // INCLUSIVE of that line's tax. Tax was then listed again as its own row, so
+  // a receipt for one $62.00 vial read:
+  //     DSIP 5mg          $66.34   <- silently included the $4.34 tax
+  //     Florida Sales Tax  $4.34
+  //     Total             $66.34   <- correct, but the rows don't sum to it
+  // The total was always right; the breakdown looked like a double charge.
+  // `gross_sales_money` is base price x quantity, which is what a customer
+  // expects to see on the item line.
   const rows = (order.line_items || []).map(li => `
     <tr>
       <td style="padding:8px 0;color:#ddd;">${esc(li.name)} ${li.quantity > 1 ? `&times;${esc(li.quantity)}` : ''}</td>
-      <td style="padding:8px 0;text-align:right;color:#ddd;">${money(li.total_money?.amount)}</td>
+      <td style="padding:8px 0;text-align:right;color:#ddd;">${money(li.gross_sales_money?.amount ?? li.base_price_money?.amount)}</td>
     </tr>`).join('');
 
   const extras = [];

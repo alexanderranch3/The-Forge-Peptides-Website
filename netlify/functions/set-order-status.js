@@ -73,7 +73,25 @@ exports.handler = async (event) => {
       return { statusCode: 404, headers, body: JSON.stringify({ error: 'Order not found' }) };
     }
 
-    const existing = getData.order.metadata || {};
+    const order       = getData.order;
+    const hasTender   = Array.isArray(order.tenders) && order.tenders.length > 0;
+
+    // ── Undo Paid is blocked once real money is on the books ─────────────────
+    // Recording a tender is heavier than flipping a flag: get-orders trusts a
+    // real tender over the metadata flag, so clearing the flag alone would
+    // leave the dashboard still showing PAID and the button looking broken.
+    // Voiding a recorded payment is a money operation — Frank does that in
+    // Square, deliberately, not with a dashboard toggle.
+    if (status === 'AWAITING_ZELLE' && hasTender) {
+      return {
+        statusCode: 409, headers,
+        body: JSON.stringify({
+          error: 'This order has a recorded payment in Square. Void or refund it in the Square dashboard first — a payment can\'t be undone from here.',
+        }),
+      };
+    }
+
+    const existing = order.metadata || {};
     const metadata = {
       ...existing,
       payment_status: status,
@@ -101,12 +119,58 @@ exports.handler = async (event) => {
       };
     }
 
+    // ── Record the Zelle payment as a real Square tender ─────────────────────
+    // Added 2026-08-14. The metadata flag is private to this application, so
+    // Square's own dashboard and every sales report were blind to it — revenue
+    // under-reported by every Zelle sale. An EXTERNAL tender is bookkeeping,
+    // not processing: no money moves through Square, and it still works on a
+    // deactivated account (verified 2026-08-13).
+    //
+    // Best-effort by design: if this fails the order is still marked paid in
+    // the dashboard, and the response says so rather than pretending.
+    let tenderRecorded = hasTender;
+    let tenderNote     = hasTender ? 'already recorded' : null;
+
+    if (status === 'PAID' && !hasTender) {
+      const due = order.net_amount_due_money?.amount ?? order.total_money?.amount ?? 0;
+      if (due > 0) {
+        try {
+          const payRes = await fetch(`${SQUARE_API}/payments`, {
+            method: 'POST',
+            headers: squareHeaders(),
+            body: JSON.stringify({
+              // Deterministic key: a double-click can never double-record.
+              idempotency_key: `forge-zelle-${orderId}`.slice(0, 45),
+              source_id:  'EXTERNAL',
+              order_id:   orderId,
+              location_id: LOCATION_ID,
+              amount_money: { amount: due, currency: 'USD' },
+              external_details: { type: 'OTHER', source: 'Zelle' },
+              note: 'Zelle',
+            }),
+          });
+          const payData = await payRes.json();
+          if (payData.payment) {
+            tenderRecorded = true;
+          } else {
+            tenderNote = 'Square rejected the payment record';
+            console.error(`TENDER NOT RECORDED for ${orderId}:`, JSON.stringify(payData.errors || payData));
+          }
+        } catch (payErr) {
+          tenderNote = 'payment record failed';
+          console.error(`TENDER NOT RECORDED for ${orderId}:`, payErr.message);
+        }
+      }
+    }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         success: true,
         orderId,
         status,
+        tenderRecorded,
+        tenderNote,
         orderNumber: updData.order.metadata?.forge_order_number || updData.order.reference_id || '',
       }),
     };
