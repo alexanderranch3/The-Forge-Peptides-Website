@@ -258,6 +258,7 @@
     <button class="tab active" id="tab-orders"     onclick="showTab('orders')">Orders</button>
     <button class="tab"        id="tab-inventory"  onclick="showTab('inventory')">Inventory</button>
     <button class="tab"        id="tab-purchasing" onclick="showTab('purchasing')">Purchasing</button>
+    <button class="tab"        id="tab-labeling"   onclick="showTab('labeling')">Labeling</button>
   </div>
 
   <div id="panel-orders">
@@ -452,6 +453,9 @@
           <input id="po-other" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()"></div>
         <div class="field"><label>Other fees note</label>
           <input id="po-other-note" placeholder="labels, Re-Up #39444" oninput="markDirty()"></div>
+        <div class="field"><label>Label $ / vial</label>
+          <input id="po-label" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()">
+          <div class="hint" id="po-label-hint"></div></div>
         <div class="field"><label>Supplier tax $</label>
           <input id="po-tax" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()">
           <div class="hint">Recorded, but excluded from COGS — tax paid to a supplier isn't a product cost.</div></div>
@@ -476,6 +480,7 @@
             <th class="num" style="width:110px;">Unit cost $</th>
             <th class="num" style="width:100px;">Goods</th>
             <th class="num" style="width:90px;">+ Fees</th>
+            <th class="num" style="width:90px;">+ Label</th>
             <th class="num" style="width:120px;">Landed / vial</th>
             <th style="width:40px;"></th>
           </tr></thead>
@@ -508,7 +513,8 @@
         <thead><tr>
           <th>Date</th><th>Reference</th><th>Supplier</th><th>Status</th>
           <th class="num">Lines</th><th class="num">Units</th>
-          <th class="num">Goods</th><th class="num">Fees</th><th class="num">Invoice total</th>
+          <th class="num">Goods</th><th class="num">Fees</th><th class="num">Labels</th>
+          <th class="num">Invoice total</th><th class="num">True cost</th>
           <th></th>
         </tr></thead>
         <tbody id="pur-po-body"></tbody>
@@ -516,6 +522,65 @@
     </div>
     <div id="pur-po-none" class="no-orders" style="display:none;">
       No purchase orders yet. Add your supplier invoices here and every margin in the business starts telling the truth.
+    </div>
+  </div>
+</div>
+
+<!-- ── Labeling Tab ── -->
+<div id="panel-labeling" style="display:none;">
+  <div id="lab-loading" class="loading">Loading labeling…</div>
+  <div id="lab-error" class="no-orders" style="display:none;"></div>
+
+  <div id="lab-content" style="display:none;">
+    <div class="stats">
+      <div class="stat-card"><div class="label">Current Rate</div>
+        <div class="value" id="lab-rate">—</div><div class="note" id="lab-provider"></div></div>
+      <div class="stat-card"><div class="label">Vials On Hand</div>
+        <div class="value" id="lab-vials">—</div><div class="note">every one needs a label</div></div>
+      <div class="stat-card"><div class="label">Label Cost On Hand</div>
+        <div class="value" id="lab-onhand">—</div><div class="note">at the current rate</div></div>
+      <div class="stat-card"><div class="label">Providers</div>
+        <div class="value" id="lab-count">—</div><div class="note">one active at a time</div></div>
+    </div>
+
+    <div class="panel-card">
+      <h3>Why this is separate</h3>
+      <p class="sub-note" style="margin:0;">
+        Labels are a real per-vial cost your <b>supplier never charges</b> — Direct Peptides ships unlabeled and
+        the labels come from a printer you pay separately. Keeping them here means switching providers is
+        <b>one number</b>, not re-entering every order.
+        <br><br>
+        🔒 <b>Changing the rate never rewrites an order you've already written.</b> Each purchase order keeps the
+        rate it was created with, so last month's landed cost stays what you actually paid. A new rate applies
+        to new orders.
+      </p>
+    </div>
+
+    <div class="panel-card">
+      <h3>Label providers</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Provider</th><th class="num">$ / vial</th><th>Status</th><th>Note</th><th></th>
+          </tr></thead>
+          <tbody id="lab-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn-sm" onclick="addLabelProvider()">+ Add provider</button>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <h3>What a different rate would cost</h3>
+      <p class="sub-note" style="margin:-4px 0 12px;">
+        A projection across the vials you hold right now. Nothing here changes a stored cost.
+      </p>
+      <div class="field" style="max-width:220px;">
+        <label>Try a rate ($ / vial)</label>
+        <input id="lab-whatif" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLabelWhatIf()">
+      </div>
+      <div id="lab-whatif-out" class="sub-note" style="margin-top:12px;"></div>
     </div>
   </div>
 </div>
@@ -869,7 +934,7 @@ let invLoaded = false;
 
 let purLoaded = false;
 
-const TABS = ['orders', 'inventory', 'purchasing'];
+const TABS = ['orders', 'inventory', 'purchasing', 'labeling'];
 
 function showTab(which) {
   TABS.forEach(t => {
@@ -878,8 +943,10 @@ function showTab(which) {
   });
   // The day-range picker and CSV export belong to orders only.
   document.getElementById('orders-controls').style.display = (which === 'orders') ? 'flex' : 'none';
-  if (which === 'inventory'  && !invLoaded) loadInventory();
-  if (which === 'purchasing' && !purLoaded) loadPurchasing();
+  if (which === 'inventory' && !invLoaded) loadInventory();
+  // Labeling reads the same payload as Purchasing — one fetch serves both.
+  if ((which === 'purchasing' || which === 'labeling') && !purLoaded) loadPurchasing();
+  if (which === 'labeling' && purLoaded) renderLabeling();
 }
 
 const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -1057,13 +1124,133 @@ async function loadPurchasing() {
     purData   = data;
     purLoaded = true;
     renderPurchasing();
+    renderLabeling();
     loading.style.display = 'none';
     content.style.display = 'block';
+    document.getElementById('lab-loading').style.display = 'none';
+    document.getElementById('lab-content').style.display = 'block';
   } catch (err) {
     loading.style.display = 'none';
     errEl.textContent     = 'Could not load purchasing: ' + err.message;
     errEl.style.display   = 'block';
+    document.getElementById('lab-loading').style.display = 'none';
+    document.getElementById('lab-error').textContent   = 'Could not load labeling: ' + err.message;
+    document.getElementById('lab-error').style.display = 'block';
   }
+}
+
+// ── Labeling ─────────────────────────────────────────────────────────────────
+// Labels are a per-vial cost the supplier never bills. Kept as its own layer so
+// changing printers is one number rather than re-entering every order — and so
+// landed cost stays decomposable into "what the vendor charged" + "what the
+// label cost".
+function activeLabelRate() {
+  const p = (purData.label_providers || []).find(x => x.is_active);
+  return p ? p.cost_per_unit_cents : 0;
+}
+
+function renderLabeling() {
+  const providers = purData.label_providers || [];
+  const impact    = purData.label_impact || {};
+
+  document.getElementById('lab-rate').textContent     = money2(impact.active_rate_cents || 0);
+  document.getElementById('lab-provider').textContent = impact.active_provider || 'no active provider';
+  document.getElementById('lab-vials').textContent    = impact.vials_on_hand ?? 0;
+  document.getElementById('lab-onhand').textContent   = money2(impact.label_cost_on_hand_cents || 0);
+  document.getElementById('lab-count').textContent    = providers.length;
+
+  document.getElementById('lab-body').innerHTML = providers.map(p => `<tr>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td class="num">${money2(p.cost_per_unit_cents)}</td>
+      <td>${p.is_active
+            ? '<span class="badge badge-received">ACTIVE</span>'
+            : '<span class="badge badge-draft">INACTIVE</span>'}</td>
+      <td class="dim" style="font-size:.78rem;">${esc(p.notes || '')}</td>
+      <td class="actions">
+        <button class="btn-sm" onclick="editLabelProvider('${p.id}')">Edit</button>
+        ${p.is_active ? '' : `<button class="btn-sm" onclick="activateLabelProvider('${p.id}')">Make active</button>`}
+        ${p.is_active ? '' : `<button class="btn-sm danger" onclick="deleteLabelProvider('${p.id}')">Delete</button>`}
+      </td>
+    </tr>`).join('') ||
+    '<tr><td colspan="5" class="dim" style="padding:14px;">No label providers yet.</td></tr>';
+
+  renderLabelWhatIf();
+}
+
+function renderLabelWhatIf() {
+  const impact = purData.label_impact || {};
+  const vials  = impact.vials_on_hand || 0;
+  const now    = impact.active_rate_cents || 0;
+  const raw    = document.getElementById('lab-whatif').value;
+  const out    = document.getElementById('lab-whatif-out');
+
+  if (!raw.trim()) {
+    out.innerHTML = `At <b>${money2(now)}</b>/vial, labelling the ${vials} vials on hand costs ` +
+                    `<b>${money2(now * vials)}</b>. Enter a rate above to compare.`;
+    return;
+  }
+  const trial = dollarsToCents(raw);
+  const diff  = (trial - now) * vials;
+  out.innerHTML =
+    `At <b>${money2(trial)}</b>/vial the same ${vials} vials cost <b>${money2(trial * vials)}</b> — ` +
+    (diff === 0
+      ? 'exactly what you pay now.'
+      : `<b class="${diff > 0 ? 'warn-cell' : ''}">${diff > 0 ? 'up' : 'down'} ${money2(Math.abs(diff))}</b>.`) +
+    `<br>Per vial that is a <b>${money2(Math.abs(trial - now))}</b> ${trial >= now ? 'increase' : 'saving'} on every future order. ` +
+    `Orders already written keep the rate they were created with.`;
+}
+
+async function addLabelProvider() {
+  const name = prompt('Label provider name:');
+  if (!name || !name.trim()) return;
+  const rate = prompt(`What does ${name.trim()} charge per vial, in dollars?`, '0.00');
+  if (rate === null) return;
+  const active = confirm('Make this the active provider?\n\nNew purchase orders will use its rate. Existing orders are untouched.');
+  try {
+    await purWrite({ action: 'save-label-provider', name: name.trim(),
+                     cost_per_unit_cents: dollarsToCents(rate), is_active: active });
+    await loadPurchasing();
+    showToast('Provider saved');
+  } catch (err) { showToast('Could not save: ' + err.message); }
+}
+
+async function editLabelProvider(id) {
+  const p = (purData.label_providers || []).find(x => x.id === id);
+  if (!p) return;
+  const name = prompt('Label provider name:', p.name);
+  if (name === null) return;
+  const rate = prompt(`What does ${name.trim()} charge per vial, in dollars?`, (p.cost_per_unit_cents / 100).toFixed(2));
+  if (rate === null) return;
+  try {
+    await purWrite({ action: 'save-label-provider', id, name: name.trim(),
+                     cost_per_unit_cents: dollarsToCents(rate), is_active: p.is_active, notes: p.notes });
+    await loadPurchasing();
+    showToast('Provider updated');
+  } catch (err) { showToast('Could not save: ' + err.message); }
+}
+
+async function activateLabelProvider(id) {
+  const p = (purData.label_providers || []).find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Make ${p.name} the active provider at ${money2(p.cost_per_unit_cents)}/vial?\n\n` +
+               `New purchase orders will use this rate. Orders you've already written keep theirs.`)) return;
+  try {
+    await purWrite({ action: 'save-label-provider', id, name: p.name,
+                     cost_per_unit_cents: p.cost_per_unit_cents, is_active: true, notes: p.notes });
+    await loadPurchasing();
+    showToast(`${p.name} is now active`);
+  } catch (err) { showToast('Could not activate: ' + err.message); }
+}
+
+async function deleteLabelProvider(id) {
+  const p = (purData.label_providers || []).find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Delete ${p.name}?`)) return;
+  try {
+    await purWrite({ action: 'delete-label-provider', id });
+    await loadPurchasing();
+    showToast('Provider deleted');
+  } catch (err) { showToast('Could not delete: ' + err.message); }
 }
 
 function renderPurchasing() {
@@ -1174,7 +1361,9 @@ function renderPOList() {
       <td class="num">${o.units_received}</td>
       <td class="num">${money2(o.goods_cents || 0)}</td>
       <td class="num">${fees ? money2(fees) : '<span class="dim">—</span>'}</td>
-      <td class="num"><strong>${money2(o.invoice_total_cents || 0)}</strong></td>
+      <td class="num">${o.label_total_cents ? money2(o.label_total_cents) : '<span class="dim">—</span>'}</td>
+      <td class="num" title="What the supplier billed">${money2(o.invoice_total_cents || 0)}</td>
+      <td class="num" title="Goods + supplier fees + labels, excluding supplier tax"><strong>${money2(o.true_cost_cents || 0)}</strong></td>
       <td class="actions">
         <button class="btn-sm" onclick="editPO('${o.id}')">${received ? 'View' : 'Edit'}</button>
         ${received ? '' : `<button class="btn-sm danger" onclick="deletePO('${o.id}')">Delete</button>`}
@@ -1190,6 +1379,8 @@ function newPO() {
     id: null, vendor_id: (purData.vendors[0] || {}).id || '', reference: '', state: 'DRAFT',
     ordered_on: new Date().toISOString().slice(0, 10),
     shipping_cents: 0, other_fees_cents: 0, other_fees_note: '', tax_cents: 0,
+    // Seeded from the active label provider, so the common case needs no thought.
+    label_cost_cents: activeLabelRate(),
     allocation: 'PER_UNIT', payment_method: '', notes: '', lines: [],
   };
   dirty = false;
@@ -1230,6 +1421,7 @@ function openEditor(title) {
   document.getElementById('po-other').value       = centsToInput(editing.other_fees_cents);
   document.getElementById('po-other-note').value  = editing.other_fees_note || '';
   document.getElementById('po-tax').value         = centsToInput(editing.tax_cents);
+  document.getElementById('po-label').value       = centsToInput(editing.label_cost_cents);
   document.getElementById('po-allocation').value  = editing.allocation || 'PER_UNIT';
   document.getElementById('po-notes').value       = editing.notes || '';
 
@@ -1281,6 +1473,7 @@ function syncEditorFromForm() {
   editing.other_fees_cents = dollarsToCents(document.getElementById('po-other').value);
   editing.other_fees_note  = document.getElementById('po-other-note').value;
   editing.tax_cents        = dollarsToCents(document.getElementById('po-tax').value);
+  editing.label_cost_cents = dollarsToCents(document.getElementById('po-label').value);
   editing.allocation       = document.getElementById('po-allocation').value;
   editing.notes            = document.getElementById('po-notes').value;
 }
@@ -1306,7 +1499,12 @@ function lineChanged(i, field, value) {
 // byte-for-byte faithful to the SQL: fees allocate across the WHOLE order, then
 // divide by units actually received (paid + free), and the landed figure uses
 // the UNROUNDED fee share while the displayed fee column is rounded.
-function previewLanded(lines, feePoolCents, allocation) {
+//
+// Labels are added per vial AFTER that division and are deliberately NOT run
+// through the allocation rule — every vial gets exactly one label whatever it
+// cost, so BY_VALUE would put a bigger label cost on an expensive vial, which
+// is simply false.
+function previewLanded(lines, feePoolCents, allocation, labelCents = 0) {
   const totalUnits = lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0);
   const goodsTotal = lines.reduce((n, l) => n + (l.quantity || 0) * (l.unit_cost_cents || 0), 0);
 
@@ -1319,10 +1517,14 @@ function previewLanded(lines, feePoolCents, allocation) {
         ? feePoolCents * goods / goodsTotal
         : feePoolCents * units / totalUnits;
     }
+    const vendorLanded = units === 0 ? null : Math.round((goods + feeShare) / units);
     return {
       goods,
       allocated: Math.round(feeShare),
-      landed: units === 0 ? null : Math.round((goods + feeShare) / units),
+      label: labelCents,
+      labelTotal: labelCents * units,
+      vendorLanded,
+      landed: vendorLanded === null ? null : vendorLanded + labelCents,
     };
   });
 }
@@ -1340,8 +1542,15 @@ function renderLines() {
     : 'Unit cost is the cost of a single vial, before shipping and fees.';
 
   const feePool = (editing.shipping_cents || 0) + (editing.other_fees_cents || 0);
-  const calc    = previewLanded(editing.lines, feePool, editing.allocation);
+  const calc    = previewLanded(editing.lines, feePool, editing.allocation, editing.label_cost_cents || 0);
   const locked  = editing.state === 'RECEIVED';
+
+  const activeRate = activeLabelRate();
+  document.getElementById('po-label-hint').innerHTML = locked
+    ? `Rate recorded on this order${editing.label_provider_name ? ` — ${esc(editing.label_provider_name)}` : ''}.`
+    : ((editing.label_cost_cents || 0) === activeRate
+        ? `Current rate${(purData.label_impact || {}).active_provider ? ` — ${esc(purData.label_impact.active_provider)}` : ''}. Change it in the Labeling tab.`
+        : `<b>Overridden</b> for this order. The current rate is ${money2(activeRate)}.`);
 
   const productOptions = (purData.products || []).map(p =>
     `<option value="${p.variant_id}">${esc(p.variant ? `${p.product} · ${p.variant}` : p.product)}</option>`).join('');
@@ -1371,6 +1580,7 @@ function renderLines() {
                  oninput="lineChanged(${i}, 'unit_cost_cents', this.value)" ${locked ? 'disabled' : ''}>${perBox}</td>
       <td class="num">${money2(c.goods)}</td>
       <td class="num">${c.allocated ? money2(c.allocated) : '<span class="dim">—</span>'}</td>
+      <td class="num">${c.label ? money2(c.label) : '<span class="dim">—</span>'}</td>
       <td class="num landed-cell ${confirmed ? '' : 'preview'}"
           title="${confirmed ? 'Computed by the database' : 'Preview — confirmed when you save'}">
         ${c.landed == null ? '<span class="dim">—</span>' : money2(c.landed)}</td>
@@ -1380,7 +1590,12 @@ function renderLines() {
 
   const goods = calc.reduce((n, c) => n + c.goods, 0);
   const units = editing.lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0);
+  const labelTotal = calc.reduce((n, c) => n + c.labelTotal, 0);
+  // Two different totals on purpose: what the SUPPLIER billed (which must tie
+  // to the paper invoice) and what the stock actually cost (which includes
+  // labels bought elsewhere, and excludes supplier tax — not a product cost).
   const invoiceTotal = goods + feePool + (editing.tax_cents || 0);
+  const trueCost     = goods + feePool + labelTotal;
   document.getElementById('po-lines-foot').innerHTML = `<tr>
     <td colspan="3" style="color:#888;">${editing.lines.length} line(s) · ${units} vials</td>
     <td class="num" style="color:#888;">${editing.lines.reduce((n, l) => n + (l.quantity || 0), 0)}</td>
@@ -1388,7 +1603,14 @@ function renderLines() {
     <td></td>
     <td class="num"><strong>${money2(goods)}</strong></td>
     <td class="num">${feePool ? money2(feePool) : '—'}</td>
-    <td class="num" title="goods + shipping + fees + tax"><strong>${money2(invoiceTotal)}</strong> invoice</td>
+    <td class="num">${labelTotal ? money2(labelTotal) : '—'}</td>
+    <td class="num" title="What the supplier billed: goods + shipping + fees + tax. Labels are bought separately and excluded here.">
+      <strong>${money2(invoiceTotal)}</strong> invoice</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td colspan="8" style="color:#888;">True cost of this stock — supplier goods and fees plus labels, excluding supplier tax</td>
+    <td class="num landed-cell"><strong>${money2(trueCost)}</strong></td>
     <td></td>
   </tr>`;
 
@@ -1451,6 +1673,7 @@ async function savePO() {
       state: editing.state, ordered_on: editing.ordered_on,
       shipping_cents: editing.shipping_cents, other_fees_cents: editing.other_fees_cents,
       other_fees_note: editing.other_fees_note, tax_cents: editing.tax_cents,
+      label_cost_cents: editing.label_cost_cents,
       allocation: editing.allocation, payment_method: editing.payment_method, notes: editing.notes,
       lines: editing.lines.map(l => ({
         variant_id: l.variant_id || null, supplier_sku: l.supplier_sku,

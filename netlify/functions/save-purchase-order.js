@@ -167,7 +167,7 @@ function buildPayload(input) {
     throw Object.assign(new Error('a purchase order cannot have more than 200 lines'), { status: 400 });
   }
 
-  return {
+  const payload = {
     id: asUuid(input.id, 'purchase order id'),
     vendor_id: asUuid(input.vendor_id, 'vendor', { required: true }),
     reference: text(input.reference, 120),
@@ -177,6 +177,7 @@ function buildPayload(input) {
     other_fees_cents: asCents(input.other_fees_cents, 'other fees'),
     other_fees_note: text(input.other_fees_note, 200),
     tax_cents: asCents(input.tax_cents, 'tax'),
+    label_provider_id: asUuid(input.label_provider_id, 'label provider'),
     allocation,
     payment_method: text(input.payment_method, 60),
     notes: text(input.notes, 2000),
@@ -195,6 +196,14 @@ function buildPayload(input) {
       };
     }),
   };
+
+  // Only forward a label rate when one was actually given. Omitting the key is
+  // what tells the database "use the active provider's rate" — sending 0 would
+  // silently record an order as having no labels at all.
+  if (input.label_cost_cents !== null && input.label_cost_cents !== undefined && input.label_cost_cents !== '') {
+    payload.label_cost_cents = asCents(input.label_cost_cents, 'label cost');
+  }
+  return payload;
 }
 
 exports.handler = async (event) => {
@@ -255,6 +264,29 @@ exports.handler = async (event) => {
     if (action === 'delete') {
       const id = asUuid(input.id, 'purchase order id', { required: true });
       await rpc('delete_purchase_order', { p_po: id });
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deleted: id }) };
+    }
+
+    if (action === 'save-label-provider') {
+      const name = text(input.name, 120);
+      if (!name) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'A label provider needs a name' }) };
+      }
+      const id = await rpc('save_label_provider', {
+        p: {
+          id: asUuid(input.id, 'label provider id'),
+          name,
+          cost_per_unit_cents: asCents(input.cost_per_unit_cents, 'label cost'),
+          is_active: input.is_active === true,
+          notes: text(input.notes, 300),
+        },
+      });
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id }) };
+    }
+
+    if (action === 'delete-label-provider') {
+      const id = asUuid(input.id, 'label provider id', { required: true });
+      await rpc('delete_label_provider', { p_id: id });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deleted: id }) };
     }
 

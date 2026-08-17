@@ -74,6 +74,14 @@ function defaultRoutes() {
       first_sold: '2026-06-01', last_sold: '2026-07-14', suggested_variant_id: VARIANT,
     }] },
     'variant_aliases': { status: 200, body: [{ id: 'a1', alias: 'KLOW Blend', variant_id: VARIANT }] },
+    'label_providers': { status: 200, body: [
+      { id: 'lp1', name: 'Re-Up Supply', cost_per_unit_cents: 29, is_active: true, notes: 'Invoice #39444' },
+      { id: 'lp2', name: 'Old Printer', cost_per_unit_cents: 150, is_active: false, notes: null },
+    ] },
+    'v_label_impact': { status: 200, body: [{
+      active_rate_cents: 29, active_provider: 'Re-Up Supply',
+      vials_on_hand: '99', label_cost_on_hand_cents: '2871',
+    }] },
   };
 }
 
@@ -245,7 +253,48 @@ console.log('\n10. click-to-map for unmatched sold lines');
     /unknown product/.test(body(await post({ action: 'map-sold-line', name: 'X', variant_id: VARIANT })).error));
 }
 
-console.log('\n11. unknown action');
+console.log('\n11. labeling as its own cost layer');
+{
+  routes = defaultRoutes();
+  const d = body(await run(getPurchasing, { headers: auth() }));
+  ok('providers returned', d.label_providers.length, 2);
+  ok('the active one is flagged', d.label_providers[0].is_active, true);
+  ok('impact figures coerced', d.label_impact.vials_on_hand, 99);
+  ok('label cost across stock', d.label_impact.label_cost_on_hand_cents, 2871);
+
+  routes['rpc/save_label_provider'] = { status: 200, body: 'lp3' };
+  ok('adds a provider',
+    (await post({ action: 'save-label-provider', name: 'New Printer', cost_per_unit_cents: 45, is_active: true })).statusCode, 200);
+  ok('rejects a blank name',
+    (await post({ action: 'save-label-provider', name: '  ', cost_per_unit_cents: 45 })).statusCode, 400);
+  ok('rejects a negative rate',
+    (await post({ action: 'save-label-provider', name: 'X', cost_per_unit_cents: -1 })).statusCode, 400);
+  ok('rejects a fractional cent rate',
+    (await post({ action: 'save-label-provider', name: 'X', cost_per_unit_cents: 1.5 })).statusCode, 400);
+
+  routes['rpc/delete_label_provider'] = { status: 400, body: {
+    message: 'that provider is recorded on a purchase order and cannot be deleted -- set it inactive instead' } };
+  okTrue('deleting a provider in use is refused, with the remedy',
+    /set it inactive instead/.test(body(await post({ action: 'delete-label-provider', id: '11111111-1111-1111-1111-111111111111' })).error));
+
+  // The distinction that matters: omitting the key means "use the active rate",
+  // sending 0 means "this order genuinely had no labels".
+  routes['rpc/save_purchase_order'] = { status: 200, body: PO };
+  calls = [];
+  await post({ ...base });
+  let sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  okTrue('omitting the label rate defers to the active provider', !('label_cost_cents' in sent));
+  calls = [];
+  await post({ ...base, label_cost_cents: 0 });
+  sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  ok('an explicit zero is forwarded as zero', sent.label_cost_cents, 0);
+  calls = [];
+  await post({ ...base, label_cost_cents: 29 });
+  sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  ok('an explicit rate is forwarded', sent.label_cost_cents, 29);
+}
+
+console.log('\n12. unknown action');
 ok('400 on an unknown action', (await post({ action: 'drop-everything' })).statusCode, 400);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,7 +303,7 @@ ok('400 on an unknown action', (await post({ action: 'drop-everything' })).statu
 // is pinned here against the real Direct Peptides #2675 invoice — the same
 // numbers verified against v_purchase_order_lines and against Frank's own hand
 // arithmetic in vault Finance/inventory-purchases.md.
-console.log('\n12. the page preview agrees with the database view');
+console.log('\n13. the page preview agrees with the database view');
 {
   const { readFileSync } = await import('fs');
   const html = readFileSync('./admin.html', 'utf8');
@@ -263,28 +312,44 @@ console.log('\n12. the page preview agrees with the database view');
 
   const previewLanded = new Function(`${src[0]}; return previewLanded;`)();
 
-  // #2675: 50 vials, $18.00 shipping + $14.50 labels, allocated per unit.
+  // #2675 modelled the way the app now does it: $18.00 shipping in the fee
+  // pool, labels as their own $0.29/vial layer. Must still reproduce the
+  // invoice exactly.
   const lines = [
     { quantity: 20, free_quantity: 0, unit_cost_cents: 1350 },
     { quantity: 10, free_quantity: 0, unit_cost_cents: 1800 },
     { quantity: 10, free_quantity: 0, unit_cost_cents: 2550 },
     { quantity: 10, free_quantity: 0, unit_cost_cents: 1400 },
   ];
-  const got = previewLanded(lines, 1800 + 1450, 'PER_UNIT').map(r => r.landed);
+  const got = previewLanded(lines, 1800, 'PER_UNIT', 29).map(r => r.landed);
   ok('landed cost matches the invoice, to the cent', got, [1415, 1865, 2615, 1465]);
 
-  // Free vials dilute landed cost — 10 paid + 2 free really is a cheaper vial.
-  const free = previewLanded([{ quantity: 10, free_quantity: 2, unit_cost_cents: 1200 }], 0, 'PER_UNIT');
-  ok('free units dilute landed cost', free[0].landed, 1000);
+  const split = previewLanded(lines, 1800, 'PER_UNIT', 29)[0];
+  ok('vendor-only landed excludes the label', split.vendorLanded, 1386);
+  ok('and the label is added on top', split.vendorLanded + split.label, split.landed);
+
+  // The old shape — labels lumped into other fees — must give the same answer,
+  // which is what makes moving them into their own layer safe.
+  ok('lumping labels into fees agrees with separating them',
+    previewLanded(lines, 1800 + 1450, 'PER_UNIT', 0).map(r => r.landed), got);
+
+  // Free vials dilute the vendor cost but still each need a label.
+  const free = previewLanded([{ quantity: 10, free_quantity: 2, unit_cost_cents: 1200 }], 0, 'PER_UNIT', 29);
+  ok('free units dilute the vendor cost', free[0].vendorLanded, 1000);
+  ok('but every vial still gets a label', free[0].landed, 1029);
+  ok('label total covers free vials too', free[0].labelTotal, 29 * 12);
 
   // No fees, no division by zero, no NaN leaking into the page.
-  ok('zero fees are handled', previewLanded(lines, 0, 'PER_UNIT')[0].landed, 1350);
+  ok('zero fees are handled', previewLanded(lines, 0, 'PER_UNIT', 0)[0].landed, 1350);
   ok('an empty line yields no landed figure, not NaN',
-    previewLanded([{ quantity: 0, free_quantity: 0, unit_cost_cents: 500 }], 100, 'PER_UNIT')[0].landed, null);
+    previewLanded([{ quantity: 0, free_quantity: 0, unit_cost_cents: 500 }], 100, 'PER_UNIT', 29)[0].landed, null);
 
-  // BY_VALUE puts more of the fee pool on the expensive line.
-  const byValue = previewLanded(lines, 3250, 'BY_VALUE').map(r => r.landed);
-  okTrue('BY_VALUE loads fees onto the expensive line', byValue[2] - 2550 > byValue[0] - 1350);
+  // BY_VALUE puts more of the fee pool on the expensive line — but the label
+  // stays flat, because a label costs the same whatever it is stuck to.
+  const byValue = previewLanded(lines, 3250, 'BY_VALUE', 29);
+  okTrue('BY_VALUE loads fees onto the expensive line',
+    byValue[2].vendorLanded - 2550 > byValue[0].vendorLanded - 1350);
+  ok('the label never varies by line value', byValue.map(r => r.label), [29, 29, 29, 29]);
 }
 
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);

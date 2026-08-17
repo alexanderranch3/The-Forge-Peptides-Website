@@ -84,7 +84,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const [vendors, orders, lines, products, unmatched, aliases] = await Promise.all([
+    const [vendors, orders, lines, products, unmatched, aliases, labelProviders, labelImpact] = await Promise.all([
       // default_pack_size matters: Direct Peptides quotes per BOX OF 10, and a
       // cost entered without dividing by it is 10x wrong — an error the
       // landed-cost workbook has already made once. The editor uses it to show
@@ -101,6 +101,10 @@ exports.handler = async (event) => {
       // Only Frank's own mappings — the Square-import aliases are not his to
       // undo and would bury the handful that are.
       sb('variant_aliases?select=id,alias,variant_id&source=eq.manual&order=alias'),
+      // Labels are a real per-vial cost the supplier never charges — kept as
+      // their own layer so switching printers is one number, not a re-entry job.
+      sb('label_providers?select=*&order=is_active.desc,name'),
+      sb('v_label_impact?select=*'),
     ]);
 
     const shapedOrders = orders.map((o) => ({
@@ -115,6 +119,11 @@ exports.handler = async (event) => {
       other_fees_cents: int(o.other_fees_cents),
       other_fees_note: o.other_fees_note,
       tax_cents: int(o.tax_cents),
+      label_cost_cents: int(o.label_cost_cents),
+      label_provider_id: o.label_provider_id,
+      label_provider_name: o.label_provider_name,
+      label_total_cents: int(o.label_total_cents),
+      true_cost_cents: int(o.true_cost_cents),
       allocation: o.allocation,
       payment_method: o.payment_method,
       notes: o.notes,
@@ -137,6 +146,9 @@ exports.handler = async (event) => {
       unit_cost_cents: int(l.unit_cost_cents),
       goods_cents: int(l.goods_cents),
       allocated_fees_cents: int(l.allocated_fees_cents),
+      label_unit_cost_cents: int(l.label_unit_cost_cents),
+      label_total_cents: int(l.label_total_cents),
+      vendor_landed_cents: int(l.vendor_landed_cents),
       landed_unit_cost_cents: int(l.landed_unit_cost_cents),
       notes: l.notes,
     }));
@@ -165,6 +177,21 @@ exports.handler = async (event) => {
         vendors,
         orders: shapedOrders,
         lines: shapedLines,
+        label_providers: labelProviders.map((p) => ({
+          id: p.id,
+          name: p.name,
+          cost_per_unit_cents: int(p.cost_per_unit_cents),
+          is_active: p.is_active,
+          notes: p.notes,
+        })),
+        label_impact: labelImpact[0]
+          ? {
+              active_rate_cents: int(labelImpact[0].active_rate_cents),
+              active_provider: labelImpact[0].active_provider,
+              vials_on_hand: int(labelImpact[0].vials_on_hand),
+              label_cost_on_hand_cents: int(labelImpact[0].label_cost_on_hand_cents),
+            }
+          : null,
         unmatched: unmatched.map((u) => ({
           name: u.name_at_sale,
           lines: int(u.lines),
