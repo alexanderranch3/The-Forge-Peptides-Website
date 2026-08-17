@@ -139,6 +139,74 @@
     .sub-note { color: #777; font-size: .8rem; margin: -10px 0 16px; line-height: 1.6; }
     .sub-note b { color: #ccc; }
 
+    /* ── Purchasing (added 2026-08-17) ───────────────────────────────────── */
+    .badge-draft    { background: rgba(108,117,125,0.15); color: #9aa0a6; }
+    .badge-ordered  { background: rgba(255,106,0,0.15);   color: #FF6A00; }
+    .badge-received { background: rgba(25,135,84,0.15);   color: #28a745; }
+    .badge-canceled { background: rgba(108,117,125,0.12); color: #6c757d; }
+
+    .panel-card {
+      background: #141414; border: 1px solid rgba(255,106,0,0.14);
+      border-radius: 10px; padding: 18px; margin-bottom: 20px;
+    }
+    .panel-card h3 { color: #fff; font-size: 0.95rem; margin-bottom: 12px; }
+
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .field label { display: block; color: #888; font-size: .72rem; text-transform: uppercase;
+                   letter-spacing: .04em; margin-bottom: 4px; }
+    .field input, .field select, .field textarea {
+      width: 100%; background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 6px;
+      color: #eee; padding: 8px 10px; font-size: .85rem; font-family: inherit;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: none; border-color: #FF6A00;
+    }
+    .field .hint { color: #666; font-size: .72rem; margin-top: 4px; }
+    .field .hint b { color: #ffc107; }
+
+    .line-table input, .line-table select {
+      background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 5px;
+      color: #eee; padding: 6px 8px; font-size: .82rem; width: 100%; font-family: inherit;
+    }
+    .line-table input:focus, .line-table select:focus { outline: none; border-color: #FF6A00; }
+    .line-table input.num-in { text-align: right; font-variant-numeric: tabular-nums; }
+    .line-table td { vertical-align: middle; }
+    .landed-cell { color: #28a745; font-weight: 700; }
+    .landed-cell.preview { color: #ffc107; }
+
+    .btn-sm {
+      background: none; border: 1px solid #333; color: #aaa; border-radius: 6px;
+      padding: 5px 10px; font-size: .78rem; cursor: pointer; font-family: inherit;
+    }
+    .btn-sm:hover { border-color: #FF6A00; color: #FF6A00; }
+    .btn-sm.danger:hover { border-color: #dc3545; color: #dc3545; }
+    .btn-primary {
+      background: #FF6A00; border: 1px solid #FF6A00; color: #0d0d0d; border-radius: 6px;
+      padding: 9px 18px; font-size: .85rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .btn-primary:hover { background: #ff8124; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-receive {
+      background: none; border: 1px solid #28a745; color: #28a745; border-radius: 6px;
+      padding: 9px 18px; font-size: .85rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .btn-receive:hover { background: rgba(40,167,69,.12); }
+    .btn-receive:disabled { opacity: .4; cursor: not-allowed; border-color: #444; color: #666; }
+
+    .editor-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px;
+                      padding-top: 16px; border-top: 1px solid #232323; }
+    .one-way-note { color: #777; font-size: .78rem; line-height: 1.5; flex: 1 1 260px; }
+    .one-way-note b { color: #ffc107; }
+
+    .vendor-chip {
+      display: inline-flex; align-items: center; gap: 8px; background: #0d0d0d;
+      border: 1px solid #2a2a2a; border-radius: 999px; padding: 6px 14px;
+      font-size: .82rem; color: #ccc; margin: 0 8px 8px 0;
+    }
+    .vendor-chip .pack { color: #666; font-size: .74rem; }
+    .vendor-chip button { background: none; border: none; color: #555; cursor: pointer; font-size: .8rem; }
+    .vendor-chip button:hover { color: #FF6A00; }
+
     .no-orders { text-align: center; padding: 60px 20px; color: #444; font-size: 1rem; }
     .loading   { text-align: center; padding: 60px 20px; color: #666; }
 
@@ -187,8 +255,9 @@
 
   <!-- Stats -->
   <div class="tabs">
-    <button class="tab active" id="tab-orders"    onclick="showTab('orders')">Orders</button>
-    <button class="tab"        id="tab-inventory" onclick="showTab('inventory')">Inventory</button>
+    <button class="tab active" id="tab-orders"     onclick="showTab('orders')">Orders</button>
+    <button class="tab"        id="tab-inventory"  onclick="showTab('inventory')">Inventory</button>
+    <button class="tab"        id="tab-purchasing" onclick="showTab('purchasing')">Purchasing</button>
   </div>
 
   <div id="panel-orders">
@@ -304,6 +373,129 @@
           <tbody id="inv-all-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Purchasing Tab ── -->
+<div id="panel-purchasing" style="display:none;">
+  <div id="pur-loading" class="loading">Loading purchasing…</div>
+  <div id="pur-error" class="no-orders" style="display:none;"></div>
+
+  <div id="pur-content" style="display:none;">
+
+    <div class="stats">
+      <div class="stat-card"><div class="label">Open Orders</div>
+        <div class="value" id="pur-open">—</div><div class="note">draft or ordered</div></div>
+      <div class="stat-card"><div class="label">Open Value</div>
+        <div class="value" id="pur-open-value">—</div><div class="note" id="pur-open-units"></div></div>
+      <div class="stat-card warn"><div class="label">Need Product Matching</div>
+        <div class="value" id="pur-unmatched">—</div><div class="note">can't be received until matched</div></div>
+      <div class="stat-card"><div class="label">Received</div>
+        <div class="value" id="pur-received">—</div><div class="note">posted to stock &amp; cost history</div></div>
+    </div>
+
+    <!-- Suppliers -->
+    <div class="panel-card">
+      <h3>Suppliers</h3>
+      <div id="pur-vendors"></div>
+      <div style="margin-top:10px;">
+        <button class="btn-sm" onclick="addVendor()">+ Add supplier</button>
+      </div>
+    </div>
+
+    <!-- Editor (hidden until a PO is opened) -->
+    <div class="panel-card" id="pur-editor" style="display:none;">
+      <h3 id="pur-editor-title">New purchase order</h3>
+
+      <div class="field-grid">
+        <div class="field"><label>Supplier</label>
+          <select id="po-vendor" onchange="renderLines()"></select></div>
+        <div class="field"><label>Invoice / reference</label>
+          <input id="po-reference" placeholder="e.g. 2946" oninput="markDirty()"></div>
+        <div class="field"><label>Status</label>
+          <select id="po-state" onchange="markDirty()">
+            <option value="DRAFT">Draft</option>
+            <option value="ORDERED">Ordered</option>
+            <option value="CANCELED">Canceled</option>
+          </select></div>
+        <div class="field"><label>Order date</label>
+          <input id="po-ordered-on" type="date" oninput="markDirty()"></div>
+        <div class="field"><label>Payment method</label>
+          <input id="po-payment" placeholder="Zelle" oninput="markDirty()"></div>
+      </div>
+
+      <div class="field-grid" style="margin-top:14px;">
+        <div class="field"><label>Shipping $</label>
+          <input id="po-shipping" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()"></div>
+        <div class="field"><label>Other fees $</label>
+          <input id="po-other" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()"></div>
+        <div class="field"><label>Other fees note</label>
+          <input id="po-other-note" placeholder="labels, Re-Up #39444" oninput="markDirty()"></div>
+        <div class="field"><label>Supplier tax $</label>
+          <input id="po-tax" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()">
+          <div class="hint">Recorded, but excluded from COGS — tax paid to a supplier isn't a product cost.</div></div>
+        <div class="field"><label>Fee allocation</label>
+          <select id="po-allocation" onchange="renderLines()">
+            <option value="PER_UNIT">Per unit (default)</option>
+            <option value="BY_VALUE">By line value</option>
+          </select>
+          <div class="hint">Per unit spreads fees evenly per vial — how you already do it by hand.</div></div>
+      </div>
+
+      <h3 style="margin-top:22px;">Lines</h3>
+      <p class="sub-note" id="po-pack-hint"></p>
+      <div class="table-wrap">
+        <table class="line-table">
+          <thead><tr>
+            <th style="min-width:180px;">Product</th>
+            <th style="min-width:150px;">Description on invoice</th>
+            <th style="min-width:100px;">Supplier SKU</th>
+            <th class="num" style="width:80px;">Qty</th>
+            <th class="num" style="width:80px;">Free</th>
+            <th class="num" style="width:110px;">Unit cost $</th>
+            <th class="num" style="width:100px;">Goods</th>
+            <th class="num" style="width:90px;">+ Fees</th>
+            <th class="num" style="width:120px;">Landed / vial</th>
+            <th style="width:40px;"></th>
+          </tr></thead>
+          <tbody id="po-lines-body"></tbody>
+          <tfoot id="po-lines-foot"></tfoot>
+        </table>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn-sm" onclick="addLine()">+ Add line</button>
+      </div>
+
+      <div class="field" style="margin-top:16px;"><label>Notes</label>
+        <textarea id="po-notes" rows="2" oninput="markDirty()"></textarea></div>
+
+      <div class="editor-actions">
+        <button class="btn-primary" id="po-save" onclick="savePO()">Save</button>
+        <button class="btn-sm" onclick="closeEditor()">Cancel</button>
+        <button class="btn-receive" id="po-receive" onclick="receivePO()">Receive order</button>
+        <div class="one-way-note" id="po-receive-note"></div>
+      </div>
+    </div>
+
+    <!-- PO list -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;">
+      <h2 class="section-title" style="margin:0;">Purchase orders</h2>
+      <button class="btn-primary" onclick="newPO()">+ New order</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Reference</th><th>Supplier</th><th>Status</th>
+          <th class="num">Lines</th><th class="num">Units</th>
+          <th class="num">Goods</th><th class="num">Fees</th><th class="num">Invoice total</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="pur-po-body"></tbody>
+      </table>
+    </div>
+    <div id="pur-po-none" class="no-orders" style="display:none;">
+      No purchase orders yet. Add your supplier invoices here and every margin in the business starts telling the truth.
     </div>
   </div>
 </div>
@@ -655,15 +847,19 @@ function copyText(text) {
 // happens in the view so this page and any other surface can never disagree.
 let invLoaded = false;
 
+let purLoaded = false;
+
+const TABS = ['orders', 'inventory', 'purchasing'];
+
 function showTab(which) {
-  const isOrders = which === 'orders';
-  document.getElementById('panel-orders').style.display    = isOrders ? 'block' : 'none';
-  document.getElementById('panel-inventory').style.display = isOrders ? 'none'  : 'block';
-  document.getElementById('tab-orders').classList.toggle('active', isOrders);
-  document.getElementById('tab-inventory').classList.toggle('active', !isOrders);
+  TABS.forEach(t => {
+    document.getElementById('panel-' + t).style.display = (t === which) ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === which);
+  });
   // The day-range picker and CSV export belong to orders only.
-  document.getElementById('orders-controls').style.display = isOrders ? 'flex' : 'none';
-  if (!isOrders && !invLoaded) loadInventory();
+  document.getElementById('orders-controls').style.display = (which === 'orders') ? 'flex' : 'none';
+  if (which === 'inventory'  && !invLoaded) loadInventory();
+  if (which === 'purchasing' && !purLoaded) loadPurchasing();
 }
 
 const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -788,6 +984,463 @@ function renderInventory(data) {
       <td class="num">${money(i.stock_cost_cents || 0)}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Purchasing ───────────────────────────────────────────────────────────────
+// Supplier orders with per-line pricing, showing TRUE LANDED COST per vial.
+//
+// 🔑 The landed cost of a SAVED line is read from v_purchase_order_lines, never
+// recomputed here — same rule as the Inventory tab. While you are still typing
+// there is nothing saved to read, so the editor shows a PREVIEW (amber) using
+// the same formula, which turns green once the database has confirmed it. If
+// the two ever disagree, the view is right and previewLanded() below is the bug.
+
+let purData   = { vendors: [], orders: [], lines: [], products: [], totals: {} };
+let editing   = null;   // the PO being edited, or null
+let dirty     = false;
+
+// Money in, money out. Cents are the only representation that survives — a
+// float dollar amount cannot hold 14.15 exactly, and the error multiplies by
+// every vial on the order.
+function dollarsToCents(v) {
+  if (v === null || v === undefined) return 0;
+  const n = parseFloat(String(v).replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
+}
+const centsToInput = c => (c == null ? '' : (c / 100).toFixed(2));
+
+function poBadge(state) {
+  const map = {
+    DRAFT:    ['badge-draft',    'DRAFT'],
+    ORDERED:  ['badge-ordered',  'ORDERED'],
+    RECEIVED: ['badge-received', 'RECEIVED'],
+    CANCELED: ['badge-canceled', 'CANCELED'],
+  };
+  const [cls, label] = map[state] || ['badge-draft', state];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadPurchasing() {
+  const loading = document.getElementById('pur-loading');
+  const errEl   = document.getElementById('pur-error');
+  const content = document.getElementById('pur-content');
+  loading.style.display = 'block';
+  errEl.style.display   = 'none';
+
+  try {
+    const res = await fetch('/.netlify/functions/get-purchasing', {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (res.status === 401) { showLogin(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(' — '));
+    purData   = data;
+    purLoaded = true;
+    renderPurchasing();
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch (err) {
+    loading.style.display = 'none';
+    errEl.textContent     = 'Could not load purchasing: ' + err.message;
+    errEl.style.display   = 'block';
+  }
+}
+
+function renderPurchasing() {
+  const t = purData.totals || {};
+  document.getElementById('pur-open').textContent        = t.open_orders ?? 0;
+  document.getElementById('pur-open-value').textContent  = money(t.open_value_cents || 0);
+  document.getElementById('pur-open-units').textContent  = (t.open_units || 0) + ' vials on order';
+  document.getElementById('pur-unmatched').textContent   = t.orders_with_unmatched_lines ?? 0;
+  document.getElementById('pur-received').textContent    = t.received_orders ?? 0;
+
+  document.getElementById('pur-vendors').innerHTML = (purData.vendors || []).map(v => `
+    <span class="vendor-chip">
+      ${esc(v.name)}
+      <span class="pack">${v.default_pack_size > 1 ? `box of ${v.default_pack_size}` : 'per vial'}</span>
+      <button onclick="renameVendor('${v.id}')" title="Rename">✎</button>
+    </span>`).join('') || '<span class="dim">No suppliers yet.</span>';
+
+  renderPOList();
+}
+
+function renderPOList() {
+  const orders = purData.orders || [];
+  document.getElementById('pur-po-none').style.display = orders.length ? 'none' : 'block';
+  document.getElementById('pur-po-body').innerHTML = orders.map(o => {
+    const fees = (o.shipping_cents || 0) + (o.other_fees_cents || 0) + (o.tax_cents || 0);
+    const received = o.state === 'RECEIVED';
+    return `<tr>
+      <td>${o.ordered_on || '<span class="dim">—</span>'}</td>
+      <td><strong>${esc(o.reference || '—')}</strong></td>
+      <td>${esc(o.vendor_name)}</td>
+      <td>${poBadge(o.state)}${o.lines_unmatched > 0
+            ? ` <span class="badge badge-low" title="${o.lines_unmatched} line(s) not linked to a product">${o.lines_unmatched} UNMATCHED</span>` : ''}</td>
+      <td class="num">${o.line_count}</td>
+      <td class="num">${o.units_received}</td>
+      <td class="num">${money2(o.goods_cents || 0)}</td>
+      <td class="num">${fees ? money2(fees) : '<span class="dim">—</span>'}</td>
+      <td class="num"><strong>${money2(o.invoice_total_cents || 0)}</strong></td>
+      <td class="actions">
+        <button class="btn-sm" onclick="editPO('${o.id}')">${received ? 'View' : 'Edit'}</button>
+        ${received ? '' : `<button class="btn-sm danger" onclick="deletePO('${o.id}')">Delete</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function markDirty() { dirty = true; updateReceiveButton(); }
+
+function newPO() {
+  editing = {
+    id: null, vendor_id: (purData.vendors[0] || {}).id || '', reference: '', state: 'DRAFT',
+    ordered_on: new Date().toISOString().slice(0, 10),
+    shipping_cents: 0, other_fees_cents: 0, other_fees_note: '', tax_cents: 0,
+    allocation: 'PER_UNIT', payment_method: '', notes: '', lines: [],
+  };
+  dirty = false;
+  openEditor('New purchase order');
+  addLine();
+}
+
+function editPO(id) {
+  const o = (purData.orders || []).find(x => x.id === id);
+  if (!o) return;
+  editing = {
+    ...o,
+    lines: (purData.lines || [])
+      .filter(l => l.purchase_order_id === id)
+      .map(l => ({
+        variant_id: l.variant_id || '', supplier_sku: l.supplier_sku || '',
+        description: l.description, quantity: l.quantity,
+        unit_cost_cents: l.unit_cost_cents, free_quantity: l.free_quantity,
+        notes: l.notes || '',
+        // What the database actually computed for this line, before any edit.
+        saved_landed_cents: l.landed_unit_cost_cents,
+      })),
+  };
+  dirty = false;
+  openEditor(`${o.state === 'RECEIVED' ? 'Received order' : 'Edit order'} — ${o.reference || o.vendor_name}`);
+}
+
+function openEditor(title) {
+  document.getElementById('pur-editor-title').textContent = title;
+  document.getElementById('po-vendor').innerHTML = (purData.vendors || [])
+    .map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  document.getElementById('po-vendor').value      = editing.vendor_id || '';
+  document.getElementById('po-reference').value   = editing.reference || '';
+  document.getElementById('po-state').value       = editing.state === 'RECEIVED' ? 'ORDERED' : (editing.state || 'DRAFT');
+  document.getElementById('po-ordered-on').value  = editing.ordered_on || '';
+  document.getElementById('po-payment').value     = editing.payment_method || '';
+  document.getElementById('po-shipping').value    = centsToInput(editing.shipping_cents);
+  document.getElementById('po-other').value       = centsToInput(editing.other_fees_cents);
+  document.getElementById('po-other-note').value  = editing.other_fees_note || '';
+  document.getElementById('po-tax').value         = centsToInput(editing.tax_cents);
+  document.getElementById('po-allocation').value  = editing.allocation || 'PER_UNIT';
+  document.getElementById('po-notes').value       = editing.notes || '';
+
+  // A received order is history. Everything is shown, nothing is editable —
+  // its landed cost is already written into variant_costs and its stock into
+  // the append-only ledger, so an edit here could only lie about the past.
+  const locked = editing.state === 'RECEIVED';
+  document.getElementById('pur-editor').querySelectorAll('input,select,textarea')
+    .forEach(el => { el.disabled = locked; });
+  document.getElementById('po-save').style.display = locked ? 'none' : '';
+
+  document.getElementById('pur-editor').style.display = 'block';
+  document.getElementById('pur-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  renderLines();
+}
+
+function closeEditor() {
+  if (dirty && !confirm('Discard unsaved changes to this order?')) return;
+  editing = null;
+  dirty   = false;
+  document.getElementById('pur-editor').style.display = 'none';
+}
+
+function addLine() {
+  if (!editing) return;
+  editing.lines.push({ variant_id: '', supplier_sku: '', description: '', quantity: 1,
+                       unit_cost_cents: 0, free_quantity: 0, notes: '' });
+  markDirty();
+  renderLines();
+}
+
+function removeLine(i) {
+  if (!editing) return;
+  editing.lines.splice(i, 1);
+  markDirty();
+  renderLines();
+}
+
+// Pull the current form state into `editing` so every render works off one
+// source of truth rather than reading the DOM twice.
+function syncEditorFromForm() {
+  if (!editing) return;
+  editing.vendor_id        = document.getElementById('po-vendor').value;
+  editing.reference        = document.getElementById('po-reference').value;
+  editing.state            = document.getElementById('po-state').value;
+  editing.ordered_on       = document.getElementById('po-ordered-on').value;
+  editing.payment_method   = document.getElementById('po-payment').value;
+  editing.shipping_cents   = dollarsToCents(document.getElementById('po-shipping').value);
+  editing.other_fees_cents = dollarsToCents(document.getElementById('po-other').value);
+  editing.other_fees_note  = document.getElementById('po-other-note').value;
+  editing.tax_cents        = dollarsToCents(document.getElementById('po-tax').value);
+  editing.allocation       = document.getElementById('po-allocation').value;
+  editing.notes            = document.getElementById('po-notes').value;
+}
+
+function lineChanged(i, field, value) {
+  if (!editing) return;
+  const l = editing.lines[i];
+  if (field === 'quantity' || field === 'free_quantity') {
+    const n = parseInt(String(value).replace(/[^\d]/g, ''), 10);
+    l[field] = Number.isFinite(n) ? n : 0;
+  } else if (field === 'unit_cost_cents') {
+    l[field] = dollarsToCents(value);
+  } else {
+    l[field] = value;
+  }
+  // Any edit invalidates the figure the database gave us for this line.
+  delete l.saved_landed_cents;
+  markDirty();
+  renderLines();
+}
+
+// ⚠️ A transcription of v_purchase_order_lines, for live feedback only. Keep it
+// byte-for-byte faithful to the SQL: fees allocate across the WHOLE order, then
+// divide by units actually received (paid + free), and the landed figure uses
+// the UNROUNDED fee share while the displayed fee column is rounded.
+function previewLanded(lines, feePoolCents, allocation) {
+  const totalUnits = lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0);
+  const goodsTotal = lines.reduce((n, l) => n + (l.quantity || 0) * (l.unit_cost_cents || 0), 0);
+
+  return lines.map(l => {
+    const units = (l.quantity || 0) + (l.free_quantity || 0);
+    const goods = (l.quantity || 0) * (l.unit_cost_cents || 0);
+    let feeShare = 0;
+    if (feePoolCents > 0 && totalUnits > 0) {
+      feeShare = (allocation === 'BY_VALUE' && goodsTotal > 0)
+        ? feePoolCents * goods / goodsTotal
+        : feePoolCents * units / totalUnits;
+    }
+    return {
+      goods,
+      allocated: Math.round(feeShare),
+      landed: units === 0 ? null : Math.round((goods + feeShare) / units),
+    };
+  });
+}
+
+function renderLines() {
+  if (!editing) return;
+  syncEditorFromForm();
+
+  const vendor = (purData.vendors || []).find(v => v.id === editing.vendor_id);
+  const pack   = vendor ? (vendor.default_pack_size || 1) : 1;
+  document.getElementById('po-pack-hint').innerHTML = pack > 1
+    ? `<b>${esc(vendor.name)} quotes per box of ${pack} vials.</b> Enter the cost of ONE VIAL below — ` +
+      `the per-box cross-check beside each unit cost is there because entering a box price as a vial ` +
+      `price understates cost by ${pack}×, and that has happened before.`
+    : 'Unit cost is the cost of a single vial, before shipping and fees.';
+
+  const feePool = (editing.shipping_cents || 0) + (editing.other_fees_cents || 0);
+  const calc    = previewLanded(editing.lines, feePool, editing.allocation);
+  const locked  = editing.state === 'RECEIVED';
+
+  const productOptions = (purData.products || []).map(p =>
+    `<option value="${p.variant_id}">${esc(p.variant ? `${p.product} · ${p.variant}` : p.product)}</option>`).join('');
+
+  document.getElementById('po-lines-body').innerHTML = editing.lines.map((l, i) => {
+    const c = calc[i];
+    // Green once the database has confirmed it; amber while it is still a
+    // preview of something unsaved.
+    const confirmed = l.saved_landed_cents != null && l.saved_landed_cents === c.landed;
+    const perBox = pack > 1 && l.unit_cost_cents
+      ? `<div class="hint">= ${money2(l.unit_cost_cents * pack)} / box</div>` : '';
+    return `<tr>
+      <td>
+        <select onchange="lineChanged(${i}, 'variant_id', this.value)" ${locked ? 'disabled' : ''}>
+          <option value="">— not matched —</option>${productOptions}
+        </select>
+      </td>
+      <td><input value="${esc(l.description || '')}" placeholder="as written on the invoice"
+                 oninput="lineChanged(${i}, 'description', this.value)" ${locked ? 'disabled' : ''}></td>
+      <td><input value="${esc(l.supplier_sku || '')}" placeholder="DP3-R 10MG"
+                 oninput="lineChanged(${i}, 'supplier_sku', this.value)" ${locked ? 'disabled' : ''}></td>
+      <td><input class="num-in" value="${l.quantity ?? ''}" inputmode="numeric"
+                 oninput="lineChanged(${i}, 'quantity', this.value)" ${locked ? 'disabled' : ''}></td>
+      <td><input class="num-in" value="${l.free_quantity ?? 0}" inputmode="numeric"
+                 oninput="lineChanged(${i}, 'free_quantity', this.value)" ${locked ? 'disabled' : ''}></td>
+      <td><input class="num-in" value="${centsToInput(l.unit_cost_cents)}" inputmode="decimal"
+                 oninput="lineChanged(${i}, 'unit_cost_cents', this.value)" ${locked ? 'disabled' : ''}>${perBox}</td>
+      <td class="num">${money2(c.goods)}</td>
+      <td class="num">${c.allocated ? money2(c.allocated) : '<span class="dim">—</span>'}</td>
+      <td class="num landed-cell ${confirmed ? '' : 'preview'}"
+          title="${confirmed ? 'Computed by the database' : 'Preview — confirmed when you save'}">
+        ${c.landed == null ? '<span class="dim">—</span>' : money2(c.landed)}</td>
+      <td>${locked ? '' : `<button class="btn-sm danger" onclick="removeLine(${i})" title="Remove line">✕</button>`}</td>
+    </tr>`;
+  }).join('');
+
+  const goods = calc.reduce((n, c) => n + c.goods, 0);
+  const units = editing.lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0);
+  const invoiceTotal = goods + feePool + (editing.tax_cents || 0);
+  document.getElementById('po-lines-foot').innerHTML = `<tr>
+    <td colspan="3" style="color:#888;">${editing.lines.length} line(s) · ${units} vials</td>
+    <td class="num" style="color:#888;">${editing.lines.reduce((n, l) => n + (l.quantity || 0), 0)}</td>
+    <td class="num" style="color:#888;">${editing.lines.reduce((n, l) => n + (l.free_quantity || 0), 0)}</td>
+    <td></td>
+    <td class="num"><strong>${money2(goods)}</strong></td>
+    <td class="num">${feePool ? money2(feePool) : '—'}</td>
+    <td class="num" title="goods + shipping + fees + tax"><strong>${money2(invoiceTotal)}</strong> invoice</td>
+    <td></td>
+  </tr>`;
+
+  updateReceiveButton();
+}
+
+function updateReceiveButton() {
+  const btn  = document.getElementById('po-receive');
+  const note = document.getElementById('po-receive-note');
+  if (!editing) return;
+
+  if (editing.state === 'RECEIVED') {
+    btn.style.display = 'none';
+    note.innerHTML = `Received on <b>${editing.received_on || '—'}</b>. Landed cost is written into cost ` +
+      `history and the stock is posted. <b>Receiving cannot be undone</b> — correct it with a stock ` +
+      `recount instead.`;
+    return;
+  }
+  btn.style.display = '';
+
+  const unmatched = editing.lines.filter(l => !l.variant_id).length;
+  const reasons = [];
+  if (!editing.id)             reasons.push('save the order first');
+  if (dirty)                   reasons.push('you have unsaved changes');
+  if (!editing.lines.length)   reasons.push('it has no lines');
+  if (unmatched)               reasons.push(`${unmatched} line(s) are not matched to a product`);
+
+  btn.disabled = reasons.length > 0;
+  note.innerHTML = reasons.length
+    ? `Can't receive yet — ${esc(reasons.join('; '))}.`
+    : `<b>Receiving is one-way.</b> It writes each line's landed cost into cost history and adds ` +
+      `${editing.lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0)} vials to stock. ` +
+      `It cannot be undone — a mistake has to be corrected with a visible stock recount.`;
+}
+
+async function purWrite(payload) {
+  const res = await fetch('/.netlify/functions/save-purchase-order', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) { showLogin(); throw new Error('Session expired'); }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Save failed');
+  return data;
+}
+
+async function savePO() {
+  if (!editing) return;
+  syncEditorFromForm();
+  const btn = document.getElementById('po-save');
+  btn.disabled = true;
+  try {
+    const { id } = await purWrite({
+      action: 'save',
+      id: editing.id, vendor_id: editing.vendor_id, reference: editing.reference,
+      state: editing.state, ordered_on: editing.ordered_on,
+      shipping_cents: editing.shipping_cents, other_fees_cents: editing.other_fees_cents,
+      other_fees_note: editing.other_fees_note, tax_cents: editing.tax_cents,
+      allocation: editing.allocation, payment_method: editing.payment_method, notes: editing.notes,
+      lines: editing.lines.map(l => ({
+        variant_id: l.variant_id || null, supplier_sku: l.supplier_sku,
+        description: l.description, quantity: l.quantity,
+        unit_cost_cents: l.unit_cost_cents, free_quantity: l.free_quantity, notes: l.notes,
+      })),
+    });
+    dirty = false;
+    await loadPurchasing();
+    editPO(id);                       // reopen, now showing the database's own figures
+    showToast('Order saved');
+  } catch (err) {
+    showToast('Could not save: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function receivePO() {
+  if (!editing || !editing.id) return;
+  const units = editing.lines.reduce((n, l) => n + (l.quantity || 0) + (l.free_quantity || 0), 0);
+  const when  = prompt(
+    `Receiving is ONE-WAY and cannot be undone.\n\n` +
+    `It will add ${units} vials to stock and write each line's landed cost into cost history.\n\n` +
+    `Received on (YYYY-MM-DD):`,
+    editing.ordered_on || new Date().toISOString().slice(0, 10));
+  if (!when) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(when)) { showToast('Date must look like 2026-08-17'); return; }
+
+  const btn = document.getElementById('po-receive');
+  btn.disabled = true;
+  try {
+    const r = await purWrite({ action: 'receive', id: editing.id, received_on: when });
+    await loadPurchasing();
+    editPO(editing.id);
+    showToast(`Received ${r.received.units} vials across ${r.received.lines} lines`);
+  } catch (err) {
+    showToast('Could not receive: ' + err.message);
+    btn.disabled = false;
+  }
+}
+
+async function deletePO(id) {
+  const o = (purData.orders || []).find(x => x.id === id);
+  if (!o) return;
+  if (!confirm(`Delete purchase order ${o.reference || ''} from ${o.vendor_name}?\n\nThis cannot be undone.`)) return;
+  try {
+    await purWrite({ action: 'delete', id });
+    if (editing && editing.id === id) { editing = null; document.getElementById('pur-editor').style.display = 'none'; }
+    await loadPurchasing();
+    showToast('Order deleted');
+  } catch (err) {
+    showToast('Could not delete: ' + err.message);
+  }
+}
+
+async function addVendor() {
+  const name = prompt('Supplier name:');
+  if (!name || !name.trim()) return;
+  const packRaw = prompt('How many vials per box does this supplier quote?\n\n' +
+                         'Enter 1 if they price per vial. Direct Peptides quotes per box of 10.', '1');
+  if (packRaw === null) return;
+  const pack = Math.max(1, parseInt(packRaw, 10) || 1);
+  try {
+    await purWrite({ action: 'save-vendor', name: name.trim(), default_pack_size: pack });
+    await loadPurchasing();
+    showToast('Supplier added');
+  } catch (err) {
+    showToast('Could not add supplier: ' + err.message);
+  }
+}
+
+async function renameVendor(id) {
+  const v = (purData.vendors || []).find(x => x.id === id);
+  if (!v) return;
+  const name = prompt('Supplier name:', v.name);
+  if (!name || !name.trim() || name === v.name) return;
+  try {
+    await purWrite({ action: 'save-vendor', id, name: name.trim(), default_pack_size: v.default_pack_size || 1 });
+    await loadPurchasing();
+    showToast('Supplier renamed');
+  } catch (err) {
+    showToast('Could not rename: ' + err.message);
+  }
 }
 
 function showToast(msg) {
