@@ -84,7 +84,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const [vendors, orders, lines, products] = await Promise.all([
+    const [vendors, orders, lines, products, unmatched, aliases] = await Promise.all([
       // default_pack_size matters: Direct Peptides quotes per BOX OF 10, and a
       // cost entered without dividing by it is 10x wrong — an error the
       // landed-cost workbook has already made once. The editor uses it to show
@@ -95,6 +95,12 @@ exports.handler = async (event) => {
       // The picker reads the same inventory view the Inventory tab does, so a
       // product is named identically on both screens.
       sb('v_inventory_dashboard?select=variant_id,product_name,variant_name,price_cents,unit_cost_cents,on_hand&order=product_name'),
+      // Sold lines whose POS-typed name never resolved to a product. They are
+      // excluded from margin until someone says what they were.
+      sb('v_unmatched_sold_lines?select=*'),
+      // Only Frank's own mappings — the Square-import aliases are not his to
+      // undo and would bury the handful that are.
+      sb('variant_aliases?select=id,alias,variant_id&source=eq.manual&order=alias'),
     ]);
 
     const shapedOrders = orders.map((o) => ({
@@ -159,6 +165,16 @@ exports.handler = async (event) => {
         vendors,
         orders: shapedOrders,
         lines: shapedLines,
+        unmatched: unmatched.map((u) => ({
+          name: u.name_at_sale,
+          lines: int(u.lines),
+          units: Number(u.units),
+          revenue_cents: int(u.revenue_cents),
+          first_sold: u.first_sold,
+          last_sold: u.last_sold,
+          suggested_variant_id: u.suggested_variant_id,
+        })),
+        aliases,
         products: products.map((p) => ({
           variant_id: p.variant_id,
           product: p.product_name,

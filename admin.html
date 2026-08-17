@@ -395,6 +395,26 @@
         <div class="value" id="pur-received">—</div><div class="note">posted to stock &amp; cost history</div></div>
     </div>
 
+    <!-- Unmatched sold lines -->
+    <div class="panel-card" id="pur-unmatched-card" style="display:none;">
+      <h3>Sales that never matched a product</h3>
+      <p class="sub-note" style="margin:-4px 0 14px;">
+        These were sold under a name typed at the till that doesn't match anything in the catalog, so they
+        carry <b>no cost and are excluded from every margin</b>. Point each one at a product once — it's
+        remembered from then on, and it can be undone.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Sold as</th><th class="num">Lines</th><th class="num">Units</th>
+            <th class="num">Revenue</th><th>Sold between</th><th style="min-width:230px;">Is actually</th><th></th>
+          </tr></thead>
+          <tbody id="pur-unmatched-body"></tbody>
+        </table>
+      </div>
+      <div id="pur-aliases" style="margin-top:14px;"></div>
+    </div>
+
     <!-- Suppliers -->
     <div class="panel-card">
       <h3>Suppliers</h3>
@@ -1061,7 +1081,81 @@ function renderPurchasing() {
       <button onclick="renameVendor('${v.id}')" title="Rename">✎</button>
     </span>`).join('') || '<span class="dim">No suppliers yet.</span>';
 
+  renderUnmatched();
   renderPOList();
+}
+
+// Click-to-map. The suggestion is pre-selected but never applied on its own —
+// what an old handwritten name meant is a judgement, and the database does not
+// get to make it silently.
+function renderUnmatched() {
+  const rows    = purData.unmatched || [];
+  const aliases = purData.aliases   || [];
+  const card    = document.getElementById('pur-unmatched-card');
+  card.style.display = (rows.length || aliases.length) ? 'block' : 'none';
+
+  const options = (purData.products || []).map(p =>
+    `<option value="${p.variant_id}">${esc(p.variant ? `${p.product} · ${p.variant}` : p.product)}</option>`).join('');
+
+  document.getElementById('pur-unmatched-body').innerHTML = rows.map((u, i) => `<tr>
+      <td><strong>${esc(u.name)}</strong></td>
+      <td class="num">${u.lines}</td>
+      <td class="num">${u.units}</td>
+      <td class="num">${money2(u.revenue_cents || 0)}</td>
+      <td class="dim" style="font-size:.78rem;">${u.first_sold === u.last_sold ? u.first_sold : `${u.first_sold} → ${u.last_sold}`}</td>
+      <td>
+        <select id="map-pick-${i}" style="width:100%;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:5px;color:#eee;padding:6px 8px;font-size:.82rem;font-family:inherit;">
+          <option value="">— choose a product —</option>${options}
+        </select>
+      </td>
+      <td><button class="btn-sm" onclick="mapSoldLine(${i})">Map</button></td>
+    </tr>`).join('') ||
+    '<tr><td colspan="7" class="dim" style="padding:14px;">Every sold line is matched to a product.</td></tr>';
+
+  // Pre-select the suggestion without acting on it.
+  rows.forEach((u, i) => {
+    const sel = document.getElementById(`map-pick-${i}`);
+    if (sel && u.suggested_variant_id) sel.value = u.suggested_variant_id;
+  });
+
+  const nameOf = (id) => {
+    const p = (purData.products || []).find(x => x.variant_id === id);
+    return p ? (p.variant ? `${p.product} · ${p.variant}` : p.product) : 'unknown product';
+  };
+  document.getElementById('pur-aliases').innerHTML = aliases.length
+    ? `<div class="dim" style="font-size:.78rem;margin-bottom:8px;">Mappings you've made:</div>` +
+      aliases.map(a => `<span class="vendor-chip">${esc(a.alias)} → ${esc(nameOf(a.variant_id))}
+        <button onclick="unmapSoldLine('${esc(a.alias).replace(/'/g, "\\'")}')" title="Undo this mapping">✕</button></span>`).join('')
+    : '';
+}
+
+async function mapSoldLine(i) {
+  const u  = (purData.unmatched || [])[i];
+  const id = document.getElementById(`map-pick-${i}`).value;
+  if (!u) return;
+  if (!id) { showToast('Choose a product first'); return; }
+  try {
+    const r = await purWrite({ action: 'map-sold-line', name: u.name, variant_id: id });
+    await loadPurchasing();
+    if (invLoaded) { invLoaded = false; loadInventory(); }   // margins just changed
+    showToast(r.mapped.costed
+      ? `Mapped ${r.mapped.lines} line(s) and costed ${r.mapped.costed}`
+      : `Mapped ${r.mapped.lines} line(s) — no cost on record for that product yet`);
+  } catch (err) {
+    showToast('Could not map: ' + err.message);
+  }
+}
+
+async function unmapSoldLine(name) {
+  if (!confirm(`Undo the mapping for "${name}"?\n\nThose sales go back to unmatched and uncosted.`)) return;
+  try {
+    const r = await purWrite({ action: 'unmap-sold-line', name });
+    await loadPurchasing();
+    if (invLoaded) { invLoaded = false; loadInventory(); }
+    showToast(`${r.restored} line(s) put back`);
+  } catch (err) {
+    showToast('Could not undo: ' + err.message);
+  }
 }
 
 function renderPOList() {

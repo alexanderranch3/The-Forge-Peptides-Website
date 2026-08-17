@@ -258,6 +258,32 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deleted: id }) };
     }
 
+    if (action === 'map-sold-line') {
+      const name = text(input.name, 300);
+      const variantId = asUuid(input.variant_id, 'product', { required: true });
+      if (!name) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Which sold name are you mapping?' }) };
+      }
+      const rows = await rpc('map_sold_line', { p_alias: name, p_variant: variantId });
+      const r = Array.isArray(rows) ? rows[0] : rows;
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          ok: true,
+          mapped: { lines: Number(r?.lines_mapped ?? 0), costed: Number(r?.lines_costed ?? 0) },
+        }),
+      };
+    }
+
+    if (action === 'unmap-sold-line') {
+      const name = text(input.name, 300);
+      if (!name) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Which mapping are you undoing?' }) };
+      }
+      const n = await rpc('unmap_sold_line', { p_alias: name });
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, restored: Number(n ?? 0) }) };
+    }
+
     if (action === 'save-vendor') {
       const id = asUuid(input.id, 'vendor id');
       const name = text(input.name, 120);

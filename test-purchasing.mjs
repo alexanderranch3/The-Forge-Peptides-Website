@@ -69,6 +69,11 @@ function defaultRoutes() {
       variant_id: VARIANT, product_name: 'Retatrutide 10mg', variant_name: '10mg',
       price_cents: 16000, unit_cost_cents: 1648, on_hand: 0,
     }] },
+    'v_unmatched_sold_lines': { status: 200, body: [{
+      name_at_sale: 'Phoenix Blend', lines: '5', units: '5.000', revenue_cents: '75000',
+      first_sold: '2026-06-01', last_sold: '2026-07-14', suggested_variant_id: VARIANT,
+    }] },
+    'variant_aliases': { status: 200, body: [{ id: 'a1', alias: 'KLOW Blend', variant_id: VARIANT }] },
   };
 }
 
@@ -206,7 +211,41 @@ console.log('\n9. vendors');
   okTrue('a duplicate name reads like English', /already exists/.test(body(dup).error));
 }
 
-console.log('\n10. unknown action');
+console.log('\n10. click-to-map for unmatched sold lines');
+{
+  routes = defaultRoutes();
+  const d = body(await run(getPurchasing, { headers: auth() }));
+  ok('unmatched names returned', d.unmatched.length, 1);
+  ok('counts coerced from strings', d.unmatched[0].lines, 5);
+  ok('units coerced', d.unmatched[0].units, 5);
+  ok('revenue coerced', d.unmatched[0].revenue_cents, 75000);
+  ok('a suggestion is offered', d.unmatched[0].suggested_variant_id, VARIANT);
+  ok('only manual aliases are listed', d.aliases.length, 1);
+  okTrue('and the query filters to manual',
+    calls.some(c => c.url.includes('variant_aliases') && c.url.includes('source=eq.manual')));
+
+  routes['rpc/map_sold_line'] = { status: 200, body: [{ lines_mapped: 5, lines_costed: 5 }] };
+  const m = await post({ action: 'map-sold-line', name: 'Phoenix Blend', variant_id: VARIANT });
+  ok('200 on map', m.statusCode, 200);
+  ok('reports lines and costs', body(m).mapped, { lines: 5, costed: 5 });
+  ok('rejects a map with no product', (await post({ action: 'map-sold-line', name: 'X' })).statusCode, 400);
+  ok('rejects a map with no name',
+    (await post({ action: 'map-sold-line', variant_id: VARIANT })).statusCode, 400);
+  ok('rejects a non-uuid product',
+    (await post({ action: 'map-sold-line', name: 'X', variant_id: 'nope' })).statusCode, 400);
+
+  routes['rpc/unmap_sold_line'] = { status: 200, body: 5 };
+  const un = await post({ action: 'unmap-sold-line', name: 'Phoenix Blend' });
+  ok('200 on unmap', un.statusCode, 200);
+  ok('reports what was put back', body(un).restored, 5);
+  ok('rejects an unmap with no name', (await post({ action: 'unmap-sold-line' })).statusCode, 400);
+
+  routes['rpc/map_sold_line'] = { status: 400, body: { message: 'unknown product' } };
+  okTrue('database refusals surface',
+    /unknown product/.test(body(await post({ action: 'map-sold-line', name: 'X', variant_id: VARIANT })).error));
+}
+
+console.log('\n11. unknown action');
 ok('400 on an unknown action', (await post({ action: 'drop-everything' })).statusCode, 400);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,7 +254,7 @@ ok('400 on an unknown action', (await post({ action: 'drop-everything' })).statu
 // is pinned here against the real Direct Peptides #2675 invoice — the same
 // numbers verified against v_purchase_order_lines and against Frank's own hand
 // arithmetic in vault Finance/inventory-purchases.md.
-console.log('\n11. the page preview agrees with the database view');
+console.log('\n12. the page preview agrees with the database view');
 {
   const { readFileSync } = await import('fs');
   const html = readFileSync('./admin.html', 'utf8');
