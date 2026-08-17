@@ -37,7 +37,10 @@ const squareFetch = (overrides = {}) => async (url) => {
   throw new Error('unexpected url ' + url);
 };
 
-const ENV = { SQUARE_ACCESS_TOKEN: 't', SQUARE_LOCATION_ID: 'LHAKA1KH35FAT' };
+// Both values are deliberately fake. `publish = "."` serves this repo verbatim,
+// so a real identifier here would be published AND would trip Netlify's secrets
+// scanning (it fails any build whose output contains an env var's value).
+const ENV = { SQUARE_ACCESS_TOKEN: 't', SQUARE_LOCATION_ID: 'LTESTLOCATION0' };
 let failures = 0;
 const check = (label, cond, extra='') => { console.log(`${cond ? '  PASS' : '  FAIL'}  ${label}${extra ? '  ' + extra : ''}`); if (!cond) failures++; };
 
