@@ -103,6 +103,42 @@
     .addr-block .name { color: #fff; font-weight: 600; }
     .addr-block .email { color: #888; font-size: 0.78rem; }
 
+    /* ── Tabs + Inventory (added 2026-08-17) ─────────────────────────────── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #262626; }
+    .tab {
+      background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+      color: #777; font-size: 0.9rem; font-weight: 700; padding: 10px 16px; letter-spacing: .02em;
+    }
+    .tab:hover { color: #bbb; }
+    .tab.active { color: #FF6A00; border-bottom-color: #FF6A00; }
+
+    .alert-band {
+      background: #1a1a1a; border: 1px solid #dc3545; border-left: 4px solid #dc3545;
+      border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+    }
+    .alert-band h3 { color: #dc3545; font-size: 0.95rem; margin-bottom: 5px; }
+    .alert-band p  { color: #bbb; font-size: 0.86rem; line-height: 1.6; }
+    .alert-band b  { color: #fff; }
+
+    .stat-card.warn  { border-color: rgba(255,193,7,.4); }
+    .stat-card.warn  .value { color: #ffc107; }
+    .stat-card.alert { border-color: rgba(220,53,69,.5); }
+    .stat-card.alert .value { color: #dc3545; }
+    .stat-card .note { color: #666; font-size: .72rem; margin-top: 3px; }
+
+    .badge-out      { background: rgba(220,53,69,0.15);  color: #dc3545; }
+    .badge-low      { background: rgba(253,126,20,0.15); color: #fd7e14; }
+    .badge-ok       { background: rgba(25,135,84,0.15);  color: #28a745; }
+    .badge-slow     { background: rgba(255,193,7,0.15);  color: #ffc107; }
+    .badge-nosales  { background: rgba(255,193,7,0.15);  color: #ffc107; }
+    .badge-empty    { background: rgba(108,117,125,0.15);color: #6c757d; }
+
+    .num  { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dim  { color: #555; }
+    .warn-cell { color: #ffc107; }
+    .sub-note { color: #777; font-size: .8rem; margin: -10px 0 16px; line-height: 1.6; }
+    .sub-note b { color: #ccc; }
+
     .no-orders { text-align: center; padding: 60px 20px; color: #444; font-size: 1rem; }
     .loading   { text-align: center; padding: 60px 20px; color: #666; }
 
@@ -135,10 +171,10 @@
 <div id="dashboard">
   <div class="dash-header">
     <div>
-      <h1>🔥 Order Dashboard</h1>
+      <h1>🔥 Forge Admin</h1>
       <div class="meta" id="last-updated"></div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;">
+    <div style="display:flex;gap:10px;align-items:center;" id="orders-controls">
       <select class="filter-select" id="days-select" onchange="loadOrders()">
         <option value="30">Last 30 days</option>
         <option value="60" selected>Last 60 days</option>
@@ -150,6 +186,12 @@
   </div>
 
   <!-- Stats -->
+  <div class="tabs">
+    <button class="tab active" id="tab-orders"    onclick="showTab('orders')">Orders</button>
+    <button class="tab"        id="tab-inventory" onclick="showTab('inventory')">Inventory</button>
+  </div>
+
+  <div id="panel-orders">
   <div class="stats">
     <div class="stat-card">
       <div class="label">Awaiting Zelle</div>
@@ -208,6 +250,61 @@
       <tbody id="orders-body"></tbody>
     </table>
     <div id="no-orders" class="no-orders" style="display:none;">No orders found for this period.</div>
+  </div>
+  </div><!-- /panel-orders -->
+
+  <!-- ── Inventory (added 2026-08-17) ─────────────────────────────────────── -->
+  <div id="panel-inventory" style="display:none;">
+    <div id="inv-loading" class="loading">Loading inventory…</div>
+    <div id="inv-error" class="no-orders" style="display:none;"></div>
+
+    <div id="inv-content" style="display:none;">
+      <div class="stats">
+        <div class="stat-card"><div class="label">Vials on hand</div>
+          <div class="value" id="inv-units">—</div><div class="note" id="inv-units-note"></div></div>
+        <div class="stat-card"><div class="label">Stock at cost</div>
+          <div class="value" id="inv-cost">—</div><div class="note" id="inv-retail"></div></div>
+        <div class="stat-card alert"><div class="label">Need reordering</div>
+          <div class="value" id="inv-reorder">—</div><div class="note">under 1 month of cover</div></div>
+        <div class="stat-card warn"><div class="label">Capital not moving</div>
+          <div class="value" id="inv-parked">—</div><div class="note" id="inv-parked-note"></div></div>
+      </div>
+
+      <div class="alert-band" id="inv-alert" style="display:none;">
+        <h3 id="inv-alert-title"></h3>
+        <p id="inv-alert-body"></p>
+      </div>
+
+      <h2 style="color:#FF6A00;font-size:1.05rem;margin:24px 0 6px;">Reorder now</h2>
+      <p class="sub-note">Under one month of cover at the current rate.
+        <b>Suggested</b> is enough for roughly two months.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Product</th><th>Status</th><th class="num">On hand</th>
+            <th class="num">Per month</th><th class="num">Sold ever</th>
+            <th class="num">Price</th><th class="num">Suggested</th>
+          </tr></thead>
+          <tbody id="inv-reorder-body"></tbody>
+        </table>
+      </div>
+      <div id="inv-reorder-none" class="no-orders" style="display:none;">Nothing needs reordering.</div>
+
+      <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">All stock</h2>
+      <p class="sub-note" id="inv-window-note"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Product</th><th>Status</th><th class="num">On hand</th>
+            <th class="num">90d</th><th class="num">Sold ever</th>
+            <th class="num">Months cover</th><th class="num">Price</th>
+            <th class="num">Unit cost</th><th class="num">Margin</th>
+            <th class="num">Stock at cost</th>
+          </tr></thead>
+          <tbody id="inv-all-body"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -550,6 +647,147 @@ function copyText(text) {
     document.body.removeChild(ta);
     showToast('Copied to clipboard');
   });
+}
+
+// ── Inventory (added 2026-08-17) ─────────────────────────────────────────────
+// Reads /.netlify/functions/get-stock, which serves the v_inventory_dashboard
+// view out of Supabase. All arithmetic -- velocity, cover, margin, status --
+// happens in the view so this page and any other surface can never disagree.
+let invLoaded = false;
+
+function showTab(which) {
+  const isOrders = which === 'orders';
+  document.getElementById('panel-orders').style.display    = isOrders ? 'block' : 'none';
+  document.getElementById('panel-inventory').style.display = isOrders ? 'none'  : 'block';
+  document.getElementById('tab-orders').classList.toggle('active', isOrders);
+  document.getElementById('tab-inventory').classList.toggle('active', !isOrders);
+  // The day-range picker and CSV export belong to orders only.
+  document.getElementById('orders-controls').style.display = isOrders ? 'flex' : 'none';
+  if (!isOrders && !invLoaded) loadInventory();
+}
+
+const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const money2 = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const invName = it => it.variant ? `${it.product} · ${it.variant}` : it.product;
+
+function invBadge(status) {
+  const map = {
+    OUT:      ['badge-out',     'OUT'],
+    LOW:      ['badge-low',     'LOW'],
+    OK:       ['badge-ok',      'OK'],
+    SLOW:     ['badge-slow',    'SLOW'],
+    NO_SALES: ['badge-nosales', 'NO SALES'],
+    EMPTY:    ['badge-empty',   'EMPTY'],
+  };
+  const [cls, label] = map[status] || ['badge-other', status];
+  // Text label always present -- OUT and OK must never be distinguishable by
+  // colour alone.
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadInventory() {
+  const loading = document.getElementById('inv-loading');
+  const errEl   = document.getElementById('inv-error');
+  const content = document.getElementById('inv-content');
+  loading.style.display = 'block';
+  errEl.style.display   = 'none';
+  content.style.display = 'none';
+
+  try {
+    const res = await fetch('/.netlify/functions/get-stock', {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (res.status === 401) { showLogin(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.hint || data.detail].filter(Boolean).join(' — '));
+    renderInventory(data);
+    invLoaded = true;
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch (err) {
+    loading.style.display = 'none';
+    errEl.textContent     = 'Could not load inventory: ' + err.message;
+    errEl.style.display   = 'block';
+  }
+}
+
+function renderInventory(data) {
+  const items = data.items || [];
+  const t     = data.totals || {};
+
+  document.getElementById('inv-units').textContent  = t.units ?? 0;
+  document.getElementById('inv-units-note').textContent =
+    `across ${items.filter(i => i.on_hand > 0).length} of ${items.length} products`;
+  document.getElementById('inv-cost').textContent   = money(t.cost_cents || 0);
+  document.getElementById('inv-retail').textContent = money(t.retail_cents || 0) + ' at retail';
+  document.getElementById('inv-reorder').textContent = t.needs_reorder ?? 0;
+  document.getElementById('inv-parked').textContent  = money(t.parked_cents || 0);
+  document.getElementById('inv-parked-note').textContent = t.cost_cents
+    ? Math.round((t.parked_cents / t.cost_cents) * 100) + '% of stock value' : '';
+
+  document.getElementById('inv-window-note').innerHTML =
+    `Velocity is measured over a <b>${data.velocity_window_days}-day trailing window</b>, not lifetime — ` +
+    `a product with no recent sales shows no cover figure rather than a misleadingly large one. ` +
+    `Margin is blank wherever any sold unit has no recorded cost.`;
+
+  // The headline: the fastest movers sitting at or near zero.
+  const critical = items.filter(i => i.status === 'OUT' || i.status === 'LOW')
+                        .sort((a, b) => b.units_per_month - a.units_per_month);
+  const band = document.getElementById('inv-alert');
+  if (critical.length) {
+    const soldEver  = items.reduce((n, i) => n + i.units_life, 0);
+    const critSold  = critical.reduce((n, i) => n + i.units_life, 0);
+    const share     = soldEver ? Math.round((critSold / soldEver) * 100) : 0;
+    document.getElementById('inv-alert-title').textContent =
+      critical.length === 1 ? 'A best seller is empty' : 'Best sellers are empty';
+    document.getElementById('inv-alert-body').innerHTML =
+      `<b>${critical.slice(0, 3).map(i => esc(invName(i))).join(', ')}</b> ` +
+      `${critical.length > 3 ? `and ${critical.length - 3} more ` : ''}are out or nearly out — together the ` +
+      `${critical.length} flagged products are <b>${share}% of every vial you have ever sold</b>.` +
+      (t.parked_cents ? ` Meanwhile <b>${money(t.parked_cents)}</b> of the <b>${money(t.cost_cents)}</b> ` +
+        `on the shelf is in products selling slower than once a year, or not at all.` : '');
+    band.style.display = 'block';
+  } else {
+    band.style.display = 'none';
+  }
+
+  const rb = document.getElementById('inv-reorder-body');
+  rb.innerHTML = critical.map(i => `<tr>
+      <td><strong>${esc(invName(i))}</strong></td>
+      <td>${invBadge(i.status)}</td>
+      <td class="num">${i.on_hand}</td>
+      <td class="num">${i.units_per_month.toFixed(1)}</td>
+      <td class="num">${i.units_life}</td>
+      <td class="num">${money(i.price_cents)}</td>
+      <td class="num"><strong>${i.suggested_buy}</strong></td>
+    </tr>`).join('');
+  document.getElementById('inv-reorder-none').style.display = critical.length ? 'none' : 'block';
+
+  const ab = document.getElementById('inv-all-body');
+  ab.innerHTML = items.map(i => {
+    // A missing cost is flagged rather than silently shown as a blank cell --
+    // it is the reason the margin beside it is absent.
+    const cost = i.unit_cost_cents == null
+      ? '<span class="dim">—</span>' : money2(i.unit_cost_cents);
+    const margin = i.margin_pct == null
+      ? `<span class="dim" title="${i.lines_missing_cost} sold unit(s) have no recorded cost">—</span>`
+      : i.margin_pct.toFixed(1) + '%';
+    const cover = i.months_cover == null
+      ? '<span class="dim">—</span>'
+      : `<span class="${i.months_cover > 12 ? 'warn-cell' : ''}">${i.months_cover.toFixed(1)}</span>`;
+    return `<tr>
+      <td>${esc(invName(i))}</td>
+      <td>${invBadge(i.status)}</td>
+      <td class="num">${i.on_hand}</td>
+      <td class="num">${i.units_90d}</td>
+      <td class="num">${i.units_life}</td>
+      <td class="num">${cover}</td>
+      <td class="num">${money(i.price_cents)}</td>
+      <td class="num">${cost}</td>
+      <td class="num">${margin}</td>
+      <td class="num">${money(i.stock_cost_cents || 0)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function showToast(msg) {
