@@ -23,6 +23,9 @@
 // Every other Square call is best-effort and must be wrapped.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const { syncOrder } = require('./_order-sync');
+const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
+
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
@@ -427,95 +430,37 @@ async function resendSend(payload) {
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }
 
-function orderSummaryHtml(order) {
-  // Line amount must be the PRE-TAX, PRE-DISCOUNT figure.
-  //
-  // Bug fixed 2026-08-14: this used `li.total_money`, which Square computes
-  // INCLUSIVE of that line's tax. Tax was then listed again as its own row, so
-  // a receipt for one $62.00 vial read:
-  //     DSIP 5mg          $66.34   <- silently included the $4.34 tax
-  //     Florida Sales Tax  $4.34
-  //     Total             $66.34   <- correct, but the rows don't sum to it
-  // The total was always right; the breakdown looked like a double charge.
-  // `gross_sales_money` is base price x quantity, which is what a customer
-  // expects to see on the item line.
-  const rows = (order.line_items || []).map(li => `
-    <tr>
-      <td style="padding:8px 0;color:#ddd;">${esc(li.name)} ${li.quantity > 1 ? `&times;${esc(li.quantity)}` : ''}</td>
-      <td style="padding:8px 0;text-align:right;color:#ddd;">${money(li.gross_sales_money?.amount ?? li.base_price_money?.amount)}</td>
-    </tr>`).join('');
 
-  const extras = [];
-  if (order.total_discount_money?.amount) {
-    extras.push(`<tr><td style="padding:4px 0;color:#28a745;">Discount</td><td style="padding:4px 0;text-align:right;color:#28a745;">&minus;${money(order.total_discount_money.amount)}</td></tr>`);
-  }
-  if (order.total_tax_money?.amount) {
-    extras.push(`<tr><td style="padding:4px 0;color:#888;">Florida Sales Tax</td><td style="padding:4px 0;text-align:right;color:#888;">${money(order.total_tax_money.amount)}</td></tr>`);
-  }
-
-  return `${rows}${extras.join('')}
-    <tr><td style="padding:12px 0 0;border-top:1px solid #333;color:#fff;font-weight:700;">Total</td>
-        <td style="padding:12px 0 0;border-top:1px solid #333;text-align:right;color:#FF6A00;font-weight:700;font-size:1.1em;">${money(order.total_money?.amount)}</td></tr>`;
-}
-
-async function sendConfirmationEmail({ orderNum, customerName, customerEmail, customerPhone, fulfillment, address, notes, order }) {
+// 2026-08-17: the customer's copy is now the SAME branded invoice that
+// send-invoice.js produces, built from _invoice.js. One template, so a
+// customer who receives an invoice at checkout and one re-sent later from
+// /admin.html sees the identical document — and there is only one place where
+// the compliance notice and the payment instructions can drift.
+async function sendConfirmationEmail({ orderNum, customerName, customerEmail, customerPhone, fulfillment, street, city, state, zip, notes, order }) {
   if (!RESEND_KEY) return; // not configured — silently skip
 
-  const isPickup = fulfillment === 'Local Pickup';
-  const summary  = orderSummaryHtml(order);
-
-  const customerHtml = `
-  <div style="background:#0d0d0d;padding:32px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <div style="max-width:520px;margin:0 auto;background:#161616;border:1px solid rgba(255,106,0,0.25);border-radius:12px;padding:32px;">
-      <h1 style="color:#FF6A00;font-size:1.3rem;margin:0 0 4px;">Order received</h1>
-      <p style="color:#888;font-size:0.9rem;margin:0 0 24px;">Order <strong style="color:#FF6A00;">${esc(orderNum)}</strong></p>
-
-      <p style="color:#ddd;font-size:0.95rem;margin:0 0 20px;">Thanks ${esc(customerName.split(' ')[0])} — we've got your order. It ships once payment lands.</p>
-
-      <div style="background:#0d0d0d;border:1px solid rgba(255,106,0,0.3);border-radius:8px;padding:18px;margin-bottom:22px;">
-        <div style="color:#FF6A00;font-weight:700;font-size:0.95rem;margin-bottom:10px;">PAYMENT — ZELLE ONLY</div>
-        <div style="color:#ddd;font-size:0.9rem;line-height:1.7;">
-          1. Open your banking app and choose Zelle<br/>
-          2. Send <strong style="color:#fff;">${money(order.total_money?.amount)}</strong> to <strong style="color:#fff;">@forgepeptides</strong><br/>
-          3. Put <strong style="color:#FF6A00;">${esc(orderNum)}</strong> in the memo
-        </div>
-      </div>
-
-      <table style="width:100%;border-collapse:collapse;font-size:0.9rem;margin-bottom:22px;">${summary}</table>
-
-      <p style="color:#888;font-size:0.85rem;margin:0 0 6px;">
-        ${isPickup ? 'Local pickup — we\'ll reach out to arrange a time.' : `Shipping to: ${esc(address || 'address on file')}`}
-      </p>
-      <p style="color:#666;font-size:0.78rem;margin:18px 0 0;border-top:1px solid #262626;padding-top:16px;">
-        Your order is not processed until Zelle payment is confirmed.<br/>
-        All products are sold for in-vitro research purposes only. Must be 21+.<br/>
-        theforgepeptides.com
-      </p>
-    </div>
-  </div>`;
-
-  const ownerHtml = `
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;">
-    <h2 style="color:#c44d00;margin:0 0 12px;">New order ${esc(orderNum)} — ${money(order.total_money?.amount)}</h2>
-    <p style="margin:0 0 4px;"><strong>${esc(customerName)}</strong></p>
-    <p style="margin:0 0 4px;">${esc(customerEmail)} · ${esc(customerPhone || 'no phone')}</p>
-    <p style="margin:0 0 16px;">${isPickup ? 'LOCAL PICKUP' : `SHIP TO: ${esc(address || '—')}`}</p>
-    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">${summary}</table>
-    ${notes ? `<p style="margin:16px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>` : ''}
-    <p style="margin:16px 0 0;color:#666;font-size:0.8rem;">Awaiting Zelle. Mark paid at theforgepeptides.com/admin.html</p>
-  </div>`;
+  const model = invoiceModel({
+    order,
+    customer: { name: customerName, email: customerEmail, phone: customerPhone },
+    address: fulfillment === 'Ship' ? { street, city, state, zip } : null,
+  });
+  // The Square response echoes metadata back, but don't rely on it for the two
+  // things the document is keyed on.
+  model.number   = orderNum;
+  model.isPickup = fulfillment === 'Local Pickup';
 
   // Customer first — their copy matters more than the owner alert.
   await resendSend({
     from: FROM_EMAIL, to: [customerEmail],
-    subject: `Order ${orderNum} received — payment instructions inside`,
-    html: customerHtml,
+    subject: `Invoice ${orderNum} from The Forge Peptides — ${money(order.total_money?.amount)} due`,
+    html: invoiceHtml(model),
   });
 
   await resendSend({
     from: FROM_EMAIL, to: [NOTIFY_EMAIL],
     subject: `New order ${orderNum} — ${customerName} — ${money(order.total_money?.amount)}`,
-    html: ownerHtml,
+    html: ownerNotificationHtml(model) +
+      (notes ? `<p style="font-family:sans-serif;margin:16px 0 0;"><strong>Customer note:</strong> ${esc(notes)}</p>` : ''),
   });
 }
 
@@ -565,11 +510,29 @@ exports.handler = async (event) => {
       console.error(`INVENTORY NOT DEDUCTED for ${orderNum}:`, invErr.message);
     }
 
+    // Mirror the sale into the dashboard database. Added 2026-08-17: until now
+    // nothing wrote sales there, so it sat frozen at the migration snapshot
+    // while stock, velocity and margin quietly went stale.
+    //
+    // Wrapped like everything else past this line. A reporting database that
+    // misses a row is a bookkeeping problem fixable from the Sync button in
+    // /admin.html; a customer seeing an error on a placed order is not.
+    // Double-posting is impossible by construction — sync_square_order() keys
+    // on the Square order id and moves stock only on first sight.
+    try {
+      await syncOrder(order, {
+        square_id: customerId, name: customerName,
+        email: customerEmail, phone: customerPhone,
+      });
+    } catch (syncErr) {
+      console.error(`DASHBOARD SYNC FAILED for ${orderNum} (re-run Sync in /admin.html):`, syncErr.message);
+    }
+
     // Confirmation email — no-op until RESEND_API_KEY is configured in Netlify.
     try {
       await sendConfirmationEmail({
         orderNum, customerName, customerEmail, customerPhone,
-        items: cleanItems, promo: validPromo, fulfillment, address, notes,
+        fulfillment, street, city, state, zip, notes,
         order, // Square already computed tax/discount/total — don't recompute
       });
     } catch (mailErr) {
