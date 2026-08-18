@@ -14,27 +14,27 @@
       "schemaCategory": "Research Peptides / Metabolic",
       "alternateName": ["LY3437943", "Triple Agonist", "GIP GLP-1 Glucagon Agonist", "GLP-3"],
       "image": "assets/retatrutide-vial.webp",
-      "title": "Buy Retatrutide (LY3437943) 10/15/24mg | The Forge Peptides",
-      "metaDescription": "Retatrutide (LY3437943) trispecific GIP/GLP-1/glucagon receptor agonist for in-vitro research. Available in 10mg, 15mg and 24mg vials at ≥98% HPLC purity. For research use only.",
+      "title": "Buy Retatrutide (LY3437943) 10/15/30mg | The Forge Peptides",
+      "metaDescription": "Retatrutide (LY3437943) trispecific GIP/GLP-1/glucagon receptor agonist for in-vitro research. Available in 10mg, 15mg and 30mg vials at ≥98% HPLC purity. For research use only.",
       "sizes": [
         { "id": "retatrutide-10mg", "label": "10mg", "price": 160 },
         { "id": "retatrutide-15mg", "label": "15mg", "price": 195 },
-        { "id": "retatrutide-24mg", "label": "24mg", "price": 245 }
+        { "id": "retatrutide-30mg", "label": "30mg", "price": 275 }
       ],
-      "schemaDescription": "Trispecific GIP/GLP-1/glucagon receptor agonist (LY3437943). Studied for its role in energy balance, adipose reduction, and glycemic regulation via simultaneous multi-receptor engagement. Available in 10mg, 15mg, and 24mg vials. For in-vitro research use only.",
+      "schemaDescription": "Trispecific GIP/GLP-1/glucagon receptor agonist (LY3437943). Studied for its role in energy balance, adipose reduction, and glycemic regulation via simultaneous multi-receptor engagement. Available in 10mg, 15mg, and 30mg vials. For in-vitro research use only.",
       "summary": [
         "Retatrutide (development code LY3437943) is a synthetic trispecific peptide that engages three receptors at once — the GIP, GLP-1, and glucagon receptors. This simultaneous multi-receptor engagement is what sets it apart from the single- and dual-agonist peptides that preceded it, and it is the reason the compound has become a focal point of recent metabolic research literature.",
         "In the laboratory, Retatrutide is studied for its role in energy balance, adipose reduction pathways, and glycemic regulation. Investigators use in-vitro and preclinical models to examine how coordinated signaling across the GIP, GLP-1, and glucagon axes behaves relative to compounds that act on only one or two of those receptors. All work with this material at The Forge is intended strictly for in-vitro laboratory research and never for human or animal use.",
-        "Retatrutide is offered in three vial sizes — 10mg, 15mg, and 24mg — so a research group can match vial quantity to the scale of a given study rather than over-ordering or splitting material across vials. Every vial is lyophilized and independently third-party lab tested at ≥98% purity by HPLC, and a Certificate of Analysis for any batch is available on request by email. Store lyophilized vials cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided to preserve peptide integrity."
+        "Retatrutide is offered in three vial sizes — 10mg, 15mg, and 30mg — so a research group can match vial quantity to the scale of a given study rather than over-ordering or splitting material across vials. Every vial is lyophilized and independently third-party lab tested at ≥98% purity by HPLC, and a Certificate of Analysis for any batch is available on request by email. Store lyophilized vials cool, dry, and out of direct light; refrigeration is recommended for longer-term storage, and repeated temperature swings should be avoided to preserve peptide integrity."
       ],
       "specs": [
         { "k": "Purity", "v": "≥98% HPLC" },
         { "k": "Form", "v": "Lyophilized powder" },
-        { "k": "Sizes", "v": "10mg / 15mg / 24mg" },
+        { "k": "Sizes", "v": "10mg / 15mg / 30mg" },
         { "k": "Testing", "v": "Third-party lab verified" }
       ],
       "faq": [
-        { "q": "What sizes of Retatrutide are available?", "a": "Retatrutide is stocked in 10mg, 15mg, and 24mg vials so research groups can match vial quantity to study scale. Pricing is $160, $195, and $245 respectively." },
+        { "q": "What sizes of Retatrutide are available?", "a": "Retatrutide is stocked in 10mg, 15mg, and 30mg vials so research groups can match vial quantity to study scale. Pricing is $160, $195, and $245 respectively." },
         { "q": "Is a Certificate of Analysis available for Retatrutide?", "a": "Yes. Every batch is third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com with the vial size to request the matching COA." },
         { "q": "How is Retatrutide shipped and stored?", "a": "Vials ship lyophilized. Store them cool, dry, and away from direct light; refrigeration is recommended for longer-term laboratory storage. This is research material for in-vitro use only." }
       ]

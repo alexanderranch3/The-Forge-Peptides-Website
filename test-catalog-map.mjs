@@ -42,10 +42,18 @@ console.log('\n— Retatrutide 30mg (added 2026-08-18) —');
 ok('Retatrutide 30mg 30mg', 'retatrutide-30mg');
 ok('Retatrutide 30mg',      'retatrutide-30mg');
 
+console.log('\n— retired sizes map to null, not to an id no page sells —');
+// 12mg (retired 2026-07-31) and 24mg (retired 2026-08-18, sourcing consolidated
+// on Direct Peptides) still exist as dashboard variants with sales history. They
+// must resolve to null so stock reporting excludes them, rather than to a site id
+// the storefront no longer carries.
+ok('Retatrutide 24mg', null);
+ok('Retatrutide 12mg', null);
+
 console.log('\n— regressions: nothing else moved —');
 for (const [n, want] of [
   ['Retatrutide 10mg','retatrutide-10mg'], ['Retatrutide 15mg','retatrutide-15mg'],
-  ['Retatrutide 24mg','retatrutide-24mg'], ['Tesamorelin 10mg','tesamorelin-10mg'],
+  ['Tesamorelin 10mg','tesamorelin-10mg'],
   ['Ipamorelin 10mg','ipamorelin-10mg'],   ['Sermorelin 10mg','sermorelin-10mg'],
   ['TESAMORELIN/IPAMORELIN PHOENIX BLEND','phoenix-blend'],
   ['Phoenix Blend (New Formula)','phoenix-blend-12-2'],

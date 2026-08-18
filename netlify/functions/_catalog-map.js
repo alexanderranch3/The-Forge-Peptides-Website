@@ -40,7 +40,9 @@ function nameToId(name) {
 
   // ── Retatrutide — all sizes ───────────────────────────────────────────────
   if (n.includes('retatrutide') && n.includes('30'))                                  return 'retatrutide-30mg';
-  if (n.includes('retatrutide') && n.includes('24'))                                  return 'retatrutide-24mg';
+  // 24mg retired 2026-08-18 (sourcing consolidated on Direct Peptides). Like the
+  // retired 12mg it now falls through to null, so the dashboard variant is simply
+  // excluded from storefront stock rather than mapped to an id no page sells.
   if (n.includes('retatrutide') && n.includes('15'))                                  return 'retatrutide-15mg';
   if (n.includes('retatrutide') && n.includes('10'))                                  return 'retatrutide-10mg';
   if (n.includes('retatrutide'))                                                       return null;

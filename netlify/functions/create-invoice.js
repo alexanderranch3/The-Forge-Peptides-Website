@@ -63,7 +63,6 @@ class ValidationError extends Error {}
 const CATALOG = {
   'retatrutide-10mg':           { name: 'Retatrutide 10mg',                  price: 160 },
   'retatrutide-15mg':           { name: 'Retatrutide 15mg',                  price: 195 },
-  'retatrutide-24mg':           { name: 'Retatrutide 24mg',                  price: 245 },
   'retatrutide-30mg':           { name: 'Retatrutide 30mg',                  price: 275 },
   'tesamorelin-10mg':           { name: 'Tesamorelin 10mg',                  price: 89  },
   'sermorelin-10mg':            { name: 'Sermorelin 10mg',                   price: 119 },

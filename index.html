@@ -284,7 +284,7 @@
             "name": "Where can I buy Retatrutide?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Retatrutide (LY3437943), a trispecific GIP/GLP-1/glucagon receptor agonist, is available for research purchase at The Forge Peptides (theforgepeptides.com) in multiple sizes: 10mg ($160), 15mg ($195), and 24mg ($245). For in-vitro research use only."
+              "text": "Retatrutide (LY3437943), a trispecific GIP/GLP-1/glucagon receptor agonist, is available for research purchase at The Forge Peptides (theforgepeptides.com) in multiple sizes: 10mg ($160), 15mg ($195), and 30mg ($275). For in-vitro research use only."
             }
           },
           {
@@ -1206,7 +1206,6 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
         <div class="reta-sizes">
           <button class="reta-size active" data-id="retatrutide-10mg" data-name="Retatrutide 10mg" data-price="160" data-mg="10" onclick="selectRetaSize(this)">10mg<span>$160</span></button>
           <button class="reta-size" data-id="retatrutide-15mg" data-name="Retatrutide 15mg" data-price="195" data-mg="15" onclick="selectRetaSize(this)">15mg<span>$195</span></button>
-          <button class="reta-size" data-id="retatrutide-24mg" data-name="Retatrutide 24mg" data-price="245" data-mg="24" onclick="selectRetaSize(this)">24mg<span>$245</span></button>
           <button class="reta-size" data-id="retatrutide-30mg" data-name="Retatrutide 30mg" data-price="275" data-mg="30" onclick="selectRetaSize(this)">30mg<span>$275</span></button>
         </div>
         <div class="p-meta">
@@ -1693,7 +1692,6 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       <tr><td colspan="2">
         <div class="price-item" data-price-id="retatrutide-10mg"><span class="price-bullet">▶</span><span class="price-name">Retatrutide 10mg</span><span class="price-amt">$160</span></div>
         <div class="price-item" data-price-id="retatrutide-15mg"><span class="price-bullet">▶</span><span class="price-name">Retatrutide 15mg</span><span class="price-amt">$195</span></div>
-        <div class="price-item" data-price-id="retatrutide-24mg"><span class="price-bullet">▶</span><span class="price-name">Retatrutide 24mg</span><span class="price-amt">$245</span></div>
         <div class="price-item" data-price-id="retatrutide-30mg"><span class="price-bullet">▶</span><span class="price-name">Retatrutide 30mg</span><span class="price-amt">$275</span></div>
       </td></tr>
 
@@ -1836,7 +1834,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
 
     <details class="faq-item">
       <summary>Where can I buy Retatrutide?</summary>
-      <div class="faq-a">Retatrutide (LY3437943), a trispecific GIP/GLP-1/glucagon receptor agonist, is available for research purchase at The Forge Peptides (theforgepeptides.com) in multiple sizes: 10mg ($160), 15mg ($195), and 24mg ($245). For in-vitro research use only.</div>
+      <div class="faq-a">Retatrutide (LY3437943), a trispecific GIP/GLP-1/glucagon receptor agonist, is available for research purchase at The Forge Peptides (theforgepeptides.com) in multiple sizes: 10mg ($160), 15mg ($195), and 30mg ($275). For in-vitro research use only.</div>
     </details>
 
     <details class="faq-item">
@@ -2202,11 +2200,13 @@ function selectRetaSize(btn) {
   // Re-apply sold-out state for this size
   applySoldOut(addBtn, id);
 
-  // Swap vial image (24mg has its own photo)
+  // Swap vial image. Every current size shares the generic photo — 24mg had its
+  // own and was retired 2026-08-18. Kept as a map so a future size-specific
+  // photo is a one-line change.
   const retaImgMap = {
     'retatrutide-10mg': 'assets/retatrutide-vial.webp',
     'retatrutide-15mg': 'assets/retatrutide-vial.webp',
-    'retatrutide-24mg': 'assets/retatrutide-24mg-vial.webp',
+    'retatrutide-30mg': 'assets/retatrutide-vial.webp',
   };
   const cardImg = addBtn.closest('.p-card').querySelector('img');
   if (cardImg && retaImgMap[id]) cardImg.src = retaImgMap[id];
@@ -2245,7 +2245,12 @@ function selectVariant(btn, groupId) {
 const productImages = {
   'retatrutide-10mg':       'assets/retatrutide-vial.webp',
   'retatrutide-15mg':       'assets/retatrutide-vial.webp',
-  'retatrutide-24mg':       'assets/retatrutide-24mg-vial.webp',
+  'retatrutide-30mg':       'assets/retatrutide-vial.webp',
+  // No entry for bpc-157-10mg on purpose. The only BPC photos here are the
+  // Wolverine BLEND vials, and showing a blend as standalone BPC-157 would
+  // misrepresent the product — the same confusion _catalog-map.js guards
+  // against. Missing ids fall back to the drawn vial, which is honest.
+  // (24mg retired 2026-08-18; its photo stays in assets/ in case it returns.)
   'sermorelin-10mg':        'assets/sermorelin-vial.webp',
   'tesamorelin-10mg':       'assets/tesamorelin-vial.webp',
   'mots-c-10mg':            'assets/mots-c-vial.webp',
@@ -2274,7 +2279,7 @@ const productImages = {
 // Multi-variant families (Retatrutide, NAD+, GHK-Cu, Phoenix, Wolverine) map
 // each variant id to the one family page.
 const PRODUCT_PAGES = {
-  'retatrutide-10mg':'retatrutide','retatrutide-15mg':'retatrutide','retatrutide-24mg':'retatrutide',
+  'retatrutide-10mg':'retatrutide','retatrutide-15mg':'retatrutide',
   'tesamorelin-10mg':'tesamorelin',
   'ghk-cu-50mg':'ghk-cu','ghk-cu-100mg':'ghk-cu',
   'nad-100mg':'nad-plus','nad-500mg':'nad-plus','nad-1000mg':'nad-plus',
