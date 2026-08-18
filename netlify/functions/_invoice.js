@@ -223,4 +223,11 @@ function ownerNotificationHtml(m) {
   </div>`;
 }
 
-module.exports = { invoiceModel, invoiceHtml, ownerNotificationHtml, money, esc, formatDate };
+// ZELLE_TAG and SITE_URL are exported because _sms.js needs the same values.
+// They were briefly duplicated there — the same mistake that let two copies of
+// nameToId drift apart. One definition, imported.
+module.exports = {
+  invoiceModel, invoiceHtml, ownerNotificationHtml,
+  money, esc, formatDate,
+  ZELLE_TAG, SITE_URL,
+};

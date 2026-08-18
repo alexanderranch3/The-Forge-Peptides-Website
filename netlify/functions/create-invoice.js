@@ -23,7 +23,8 @@
 // Every other Square call is best-effort and must be wrapped.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { syncOrder } = require('./_order-sync');
+const { syncOrder, rpc } = require('./_order-sync');
+const { consentText, CURRENT_VERSION } = require('./_sms-consent');
 const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
 const { checkAvailability, shortageMessage } = require('./_stock');
 const { nameToId } = require('./_catalog-map');
@@ -443,7 +444,8 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const { customerName, customerEmail, customerPhone, fulfillment, address, street, city, state, zip, notes, promoCode, shippingAmount, shippingLabel, items } = body;
+  const { customerName, customerEmail, customerPhone, fulfillment, address, street, city, state, zip, notes, promoCode, shippingAmount, shippingLabel, items,
+    smsConsentOrder, smsConsentMarketing, smsConsentVersion } = body;
 
   if (!customerName || !customerEmail || !fulfillment || !items?.length) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields.' }) };
@@ -513,6 +515,38 @@ exports.handler = async (event) => {
       });
     } catch (syncErr) {
       console.error(`DASHBOARD SYNC FAILED for ${orderNum} (re-run Sync in /admin.html):`, syncErr.message);
+    }
+
+    // SMS consent. Recorded SEPARATELY from the order sync and in its own try,
+    // because the two failure modes are not comparable: a missed order row is
+    // repairable from the Sync button, but a missed consent is gone -- there is
+    // no backfill for a moment that has passed, and the number becomes untextable
+    // forever. So it must not ride on the sync succeeding.
+    //
+    // 🚨 The WORDING is read from _sms-consent.js here, never from the request.
+    // The page sends only booleans and a version; if it sent the text, a forged
+    // POST could put words in a customer's mouth and the record would be worthless.
+    // An unticked box writes no row at all (see 011) -- refusal is an absence.
+    if (smsConsentOrder === true || smsConsentMarketing === true) {
+      try {
+        const v = smsConsentVersion || CURRENT_VERSION;
+        const written = await rpc('record_sms_consent', {
+          p_phone:      customerPhone,
+          p_order:      smsConsentOrder === true,
+          p_marketing:  smsConsentMarketing === true,
+          p_version:    v,
+          p_order_text: consentText('order', v),
+          p_mkt_text:   consentText('marketing', v),
+          p_source:     'checkout',
+        });
+        // 0 means the phone number could not be normalised to E.164 -- worth
+        // knowing, because the customer ticked a box and got nothing recorded.
+        if (Number(written) === 0) {
+          console.error(`SMS CONSENT NOT RECORDED for ${orderNum}: unusable phone number`);
+        }
+      } catch (consentErr) {
+        console.error(`SMS CONSENT WRITE FAILED for ${orderNum}:`, consentErr.message);
+      }
     }
 
     // Confirmation email — no-op until RESEND_API_KEY is configured in Netlify.

@@ -2430,6 +2430,33 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
             <span id="forge-promo-status" style="font-size:0.82rem;min-width:70px;text-align:right;"></span>
           </div>
 
+          <!-- SMS consent. Two SEPARATE opt-ins, both unchecked by default, and
+               neither one required to place the order. Order texts and marketing
+               texts are different asks with different legal footing, so bundling
+               them into one box would let the weaker claim undermine the stronger.
+               The wording lives in netlify/functions/_sms-consent.js (versioned);
+               the page sends only smsConsentVersion, never the text, so a forged
+               POST cannot claim someone agreed to language they never saw. -->
+          <div style="border:1px solid rgba(255,106,0,0.15);border-radius:var(--r-lg);padding:12px 14px;display:flex;flex-direction:column;gap:10px;">
+            <div style="color:#FF6A00;font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Text Updates <span style="color:#666;font-weight:600;text-transform:none;letter-spacing:0;">— optional</span></div>
+
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+              <input type="checkbox" id="forge-sms-order" style="margin-top:3px;accent-color:#FF6A00;width:16px;height:16px;flex-shrink:0;">
+              <span style="color:#ccc;font-size:0.85rem;line-height:1.45;">
+                <strong style="color:#fff;">Text me about my order</strong><br>
+                <span style="color:#888;font-size:0.78rem;">Receipts, shipping, and payment reminders. Msg &amp; data rates may apply. Reply STOP to opt out. Not required to buy.</span>
+              </span>
+            </label>
+
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+              <input type="checkbox" id="forge-sms-marketing" style="margin-top:3px;accent-color:#FF6A00;width:16px;height:16px;flex-shrink:0;">
+              <span style="color:#ccc;font-size:0.85rem;line-height:1.45;">
+                <strong style="color:#fff;">Text me deals and new products</strong><br>
+                <span style="color:#888;font-size:0.78rem;">A few messages a month. Msg &amp; data rates may apply. Reply STOP to opt out. Not required to buy.</span>
+              </span>
+            </label>
+          </div>
+
           <div style="background:rgba(255,106,0,0.06);border:1px solid rgba(255,106,0,0.15);border-radius:var(--r-lg);padding:12px 14px;color:#888;font-size:0.82rem;line-height:1.5;">
             <i class="bi bi-info-circle" style="color:#FF6A00;margin-right:6px;"></i>
             Payment is via <strong style="color:#fff;">Zelle @forgepeptides</strong> only. Include your order number in the Zelle memo. Orders process once payment is confirmed.
@@ -2865,6 +2892,13 @@ async function submitForgeOrder(e) {
     address,
     street, city, state, zip,
     notes:         document.getElementById('forge-notes').value || '',
+    // SMS consent. Only the booleans and a VERSION go over the wire -- never the
+    // wording, which lives server-side in _sms-consent.js so the record cannot be
+    // forged. smsConsentVersion must match CURRENT_VERSION there; test-sms.mjs
+    // fails the build if these two drift apart.
+    smsConsentOrder:     document.getElementById('forge-sms-order').checked,
+    smsConsentMarketing: document.getElementById('forge-sms-marketing').checked,
+    smsConsentVersion:   '2026-08-18.1',
     promoCode,
     shippingAmount: shipping,
     shippingLabel:  selectedShippingRate ? selectedShippingRate.label : null,
