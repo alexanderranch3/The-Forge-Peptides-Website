@@ -248,6 +248,7 @@
         <option value="60" selected>Last 60 days</option>
         <option value="90">Last 90 days</option>
       </select>
+      <button class="btn btn-primary" onclick="openSale()" title="Ring up an in-person sale">+ New sale</button>
       <button class="btn btn-outline" onclick="loadOrders()">↺ Refresh</button>
       <button class="btn btn-primary" onclick="exportCSV()">⬇ Export Pirate Ship CSV</button>
     </div>
@@ -591,6 +592,83 @@
         <input id="lab-whatif" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLabelWhatIf()">
       </div>
       <div id="lab-whatif-out" class="sub-note" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── New sale (POS) ── -->
+<div id="sale-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;overflow-y:auto;padding:24px 12px;">
+  <div class="panel-card" style="max-width:720px;margin:0 auto;">
+    <h3>New sale</h3>
+    <p class="sub-note" style="margin:-4px 0 16px;">
+      Records the sale here and moves the stock. <b>It does not create a Square order</b> — the dashboard is
+      the record now.
+    </p>
+
+    <div class="field-grid">
+      <div class="field">
+        <label>What is this</label>
+        <select id="sale-purpose" onchange="renderSale()">
+          <option value="SALE">A sale to a customer</option>
+          <option value="INTERNAL">My own use — not revenue</option>
+          <option value="COMP">Given away — not revenue</option>
+        </select>
+        <div class="hint" id="sale-purpose-hint"></div>
+      </div>
+      <div class="field">
+        <label>Payment</label>
+        <select id="sale-payment" onchange="renderSale()">
+          <option value="PAID">Paid now</option>
+          <option value="AWAITING_PAYMENT">Awaiting payment</option>
+        </select>
+      </div>
+      <div class="field"><label>Date</label><input id="sale-date" type="date"></div>
+    </div>
+
+    <div class="field-grid" style="margin-top:14px;">
+      <div class="field"><label>Customer name</label><input id="sale-name" placeholder="optional"></div>
+      <div class="field"><label>Email</label><input id="sale-email" placeholder="optional"></div>
+      <div class="field"><label>Phone</label><input id="sale-phone" placeholder="optional"></div>
+    </div>
+
+    <h3 style="margin-top:22px;">Items</h3>
+    <div class="table-wrap">
+      <table class="line-table">
+        <thead><tr>
+          <th style="min-width:220px;">Product</th>
+          <th class="num" style="width:90px;">On hand</th>
+          <th class="num" style="width:80px;">Qty</th>
+          <th class="num" style="width:110px;">Price each $</th>
+          <th class="num" style="width:110px;">Amount</th>
+          <th style="width:40px;"></th>
+        </tr></thead>
+        <tbody id="sale-lines"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;"><button class="btn-sm" onclick="addSaleLine()">+ Add item</button></div>
+
+    <div class="field-grid" style="margin-top:16px;">
+      <div class="field"><label>Discount $</label>
+        <input id="sale-discount" class="num-in" inputmode="decimal" placeholder="0.00" oninput="renderSale()"></div>
+      <div class="field"><label>Sales tax $</label>
+        <input id="sale-tax" class="num-in" inputmode="decimal" placeholder="0.00" oninput="renderSale()">
+        <div class="hint"><a href="#" onclick="applyFlTax();return false;" style="color:#FF6A00;">Apply Florida 7%</a>
+          — on the product subtotal, before discount, the way Square applies it.</div></div>
+      <div class="field"><label>Shipping $</label>
+        <input id="sale-shipping" class="num-in" inputmode="decimal" placeholder="0.00" oninput="renderSale()"></div>
+    </div>
+
+    <div class="field" style="margin-top:14px;"><label>Note</label>
+      <input id="sale-note" placeholder="optional"></div>
+
+    <div class="alert-band" id="sale-summary" style="display:none;margin:16px 0 0;">
+      <p id="sale-summary-body"></p>
+    </div>
+
+    <div class="editor-actions">
+      <button class="btn-primary" id="sale-save" onclick="recordSale()">Record sale</button>
+      <button class="btn-sm" onclick="closeSale()">Cancel</button>
+      <div class="one-way-note">This posts stock and <b>cannot be deleted</b>. A mistake is corrected with a stock adjustment.</div>
     </div>
   </div>
 </div>
@@ -1163,6 +1241,172 @@ function renderInventory(data) {
       <td><button class="btn-sm" onclick="openAdjust('${i.variant_id}')" title="Record a count, damage or a return">Adjust</button></td>
     </tr>`;
   }).join('');
+}
+
+// ── New sale (POS) ───────────────────────────────────────────────────────────
+// The piece that replaces walking to Square for an in-person sale.
+//
+// 🔑 Every sale attempt carries a client_uid generated HERE. A double click, a
+// dropped connection, a retry — the database keys on it and rings the sale once.
+// stock_ledger is append-only, so a duplicate could not be deleted afterwards;
+// making it impossible beats detecting it.
+let saleLines = [];
+let saleUid = null;
+
+function openSale() {
+  saleLines = [];
+  // New id per sale, not per click of Record — a retry of THIS sale must reuse it.
+  saleUid = 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  document.getElementById('sale-purpose').value = 'SALE';
+  document.getElementById('sale-payment').value = 'PAID';
+  document.getElementById('sale-date').value = new Date().toISOString().slice(0, 10);
+  ['sale-name','sale-email','sale-phone','sale-note','sale-discount','sale-tax','sale-shipping']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('sale-modal').style.display = 'block';
+  if (!invItems.length) loadInventory().then(() => { addSaleLine(); });
+  else addSaleLine();
+}
+
+function closeSale() {
+  if (saleLines.some(l => l.variant_id) && !confirm('Discard this sale?')) return;
+  document.getElementById('sale-modal').style.display = 'none';
+  saleLines = [];
+  saleUid = null;
+}
+
+function addSaleLine() {
+  saleLines.push({ variant_id: '', quantity: 1, unit_price_cents: 0 });
+  renderSale();
+}
+
+function removeSaleLine(i) { saleLines.splice(i, 1); renderSale(); }
+
+function saleLineChanged(i, field, value) {
+  const l = saleLines[i];
+  if (field === 'variant_id') {
+    l.variant_id = value;
+    // Default to the product's retail price; still editable, because a counter
+    // sale is exactly where a one-off price happens.
+    const it = invItems.find(x => x.variant_id === value);
+    if (it) l.unit_price_cents = it.price_cents;
+  } else if (field === 'quantity') {
+    const n = parseInt(String(value).replace(/[^\d]/g, ''), 10);
+    l.quantity = Number.isFinite(n) && n > 0 ? n : 1;
+  } else if (field === 'unit_price_cents') {
+    l.unit_price_cents = dollarsToCents(value);
+  }
+  renderSale();
+}
+
+function applyFlTax() {
+  const subtotal = saleLines.reduce((n, l) => n + (l.quantity || 0) * (l.unit_price_cents || 0), 0);
+  document.getElementById('sale-tax').value = ((Math.round(subtotal * 0.07)) / 100).toFixed(2);
+  renderSale();
+}
+
+function renderSale() {
+  const purpose = document.getElementById('sale-purpose').value;
+  document.getElementById('sale-purpose-hint').innerHTML = purpose === 'SALE'
+    ? 'Counts as revenue.'
+    : '<b>Moves stock but is NOT revenue</b> — kept out of every sales figure.';
+
+  const options = (invItems || []).map(p =>
+    `<option value="${p.variant_id}">${esc(invName(p))}</option>`).join('');
+
+  document.getElementById('sale-lines').innerHTML = saleLines.map((l, i) => {
+    const it = invItems.find(x => x.variant_id === l.variant_id);
+    const amount = (l.quantity || 0) * (l.unit_price_cents || 0);
+    // Shown, never enforced: at a counter the vial in your hand is the truth and
+    // the recorded figure is the thing that is wrong.
+    const stock = !it ? '<span class="dim">—</span>'
+      : (it.on_hand < (l.quantity || 0)
+          ? `<span class="warn-cell" title="Recorded stock is lower than this. The sale is still recorded.">${it.on_hand}</span>`
+          : it.on_hand);
+    return `<tr>
+      <td><select onchange="saleLineChanged(${i}, 'variant_id', this.value)">
+        <option value="">— choose —</option>${options}</select></td>
+      <td class="num">${stock}</td>
+      <td><input class="num-in" value="${l.quantity}" inputmode="numeric"
+                 oninput="saleLineChanged(${i}, 'quantity', this.value)"></td>
+      <td><input class="num-in" value="${centsToInput(l.unit_price_cents)}" inputmode="decimal"
+                 oninput="saleLineChanged(${i}, 'unit_price_cents', this.value)"></td>
+      <td class="num">${money2(amount)}</td>
+      <td><button class="btn-sm danger" onclick="removeSaleLine(${i})">✕</button></td>
+    </tr>`;
+  }).join('');
+  // Keep the pickers showing what is actually selected after a re-render.
+  saleLines.forEach((l, i) => {
+    const sel = document.querySelectorAll('#sale-lines select')[i];
+    if (sel) sel.value = l.variant_id || '';
+  });
+
+  const subtotal = saleLines.reduce((n, l) => n + (l.quantity || 0) * (l.unit_price_cents || 0), 0);
+  const discount = dollarsToCents(document.getElementById('sale-discount').value);
+  const tax      = dollarsToCents(document.getElementById('sale-tax').value);
+  const shipping = dollarsToCents(document.getElementById('sale-shipping').value);
+  const total    = subtotal - discount + tax + shipping;
+  const units    = saleLines.reduce((n, l) => n + (l.quantity || 0), 0);
+
+  const band = document.getElementById('sale-summary');
+  if (!units) { band.style.display = 'none'; return; }
+  band.style.display = 'block';
+  document.getElementById('sale-summary-body').innerHTML =
+    `<b>${units}</b> vial${units === 1 ? '' : 's'} · subtotal ${money2(subtotal)}` +
+    (discount ? ` − ${money2(discount)} discount` : '') +
+    (tax ? ` + ${money2(tax)} tax` : '') +
+    (shipping ? ` + ${money2(shipping)} shipping` : '') +
+    ` = <b>${money2(total)}</b>` +
+    (purpose === 'SALE' ? '' : ' — <b>not counted as revenue</b>');
+}
+
+async function recordSale() {
+  const lines = saleLines.filter(l => l.variant_id);
+  if (!lines.length) { showToast('Add at least one product'); return; }
+
+  const purpose = document.getElementById('sale-purpose').value;
+  const units = lines.reduce((n, l) => n + l.quantity, 0);
+  if (!confirm(`Record this ${purpose === 'SALE' ? 'sale' : purpose.toLowerCase()}?\n\n` +
+               `${units} vial(s) will come off the shelf. This cannot be deleted.`)) return;
+
+  const btn = document.getElementById('sale-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/.netlify/functions/create-order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({
+        client_uid: saleUid,
+        purpose,
+        payment_state: document.getElementById('sale-payment').value,
+        channel: 'POS',
+        placed_at: document.getElementById('sale-date').value || null,
+        discount_cents: dollarsToCents(document.getElementById('sale-discount').value),
+        tax_cents: dollarsToCents(document.getElementById('sale-tax').value),
+        shipping_cents: dollarsToCents(document.getElementById('sale-shipping').value),
+        note: document.getElementById('sale-note').value || null,
+        customer: {
+          name: document.getElementById('sale-name').value || null,
+          email: document.getElementById('sale-email').value || null,
+          phone: document.getElementById('sale-phone').value || null,
+        },
+        lines: lines.map(l => ({ variant_id: l.variant_id, quantity: l.quantity, unit_price_cents: l.unit_price_cents })),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Could not record the sale');
+    showToast(d.created ? `Recorded ${d.order_no} — ${money2(d.total_cents)}` : (d.message || 'Already recorded'));
+    document.getElementById('sale-modal').style.display = 'none';
+    saleLines = []; saleUid = null;
+    invLoaded = false;
+    loadOrders();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── Stock adjustments ────────────────────────────────────────────────────────
