@@ -14,56 +14,11 @@
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
+const { nameToId } = require('./_catalog-map');
+const { stockSource, fetchStock } = require('./_stock');
+
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
 
-function nameToId(name) {
-  const n = name.toLowerCase();
-
-  // ── Blends first ─────────────────────────────────────────────────────────
-  if (n.includes('klow'))                                                              return 'klow-blend';
-  if (n.includes('glow'))                                                              return 'glow-blend';
-  if (n.includes('phoenix') && (n.includes('12') || n.includes('new')))               return 'phoenix-blend-12-2';
-  if (n.includes('phoenix'))                                                           return 'phoenix-blend';
-  if (n.includes('tesamorelin') && n.includes('ipamorelin') && n.includes('12'))      return 'phoenix-blend-12-2';
-  if (n.includes('tesamorelin') && n.includes('ipamorelin'))                          return 'phoenix-blend';
-  // One Square item ("WOLVERINE BLEND") holds BOTH the 10/10 Stack and the 5/5
-  // Blend as separate variations. Map by the size in the item+variation name, not
-  // the item name (which always contains "blend") — otherwise the 10/10 variation's
-  // price gets tagged onto the 5/5 site id. See the per-variation loop below.
-  if (n.includes('wolverine')) {
-    if (n.includes('10mg/10mg') || n.includes('10/10') || n.includes('(10mg'))        return 'wolverine-stack';
-    if (n.includes('5mg/5mg')   || n.includes('5/5')   || n.includes('(5mg'))         return 'wolverine-blend-5mg';
-    return null; // size not present in the name — don't guess
-  }
-  if (n.includes('cjc'))                                                               return 'cjc1295-ipamorelin';
-
-  // ── Retatrutide — all sizes ───────────────────────────────────────────────
-  if (n.includes('retatrutide') && n.includes('24'))                                  return 'retatrutide-24mg';
-  if (n.includes('retatrutide') && n.includes('15'))                                  return 'retatrutide-15mg';
-  if (n.includes('retatrutide') && n.includes('10'))                                  return 'retatrutide-10mg';
-  if (n.includes('retatrutide'))                                                       return null;
-
-  // ── Ipamorelin (standalone) ───────────────────────────────────────────────
-  if (n.includes('ipamorelin'))                                                        return 'ipamorelin-10mg';
-
-  // ── Individual peptides ───────────────────────────────────────────────────
-  if (n.includes('tesamorelin'))                                                       return 'tesamorelin-10mg';
-  if (n.includes('sermorelin'))                                                        return 'sermorelin-10mg';
-  if (n.includes('mots-c') || n.includes('mots c'))                                   return 'mots-c-10mg';
-  if ((n.includes('ghk-cu') || n.includes('ghk cu')) && n.includes('50'))             return 'ghk-cu-50mg';
-  if (n.includes('ghk-cu') || n.includes('ghk cu'))                                   return 'ghk-cu-100mg';
-  if (n.includes('ss-31') || n.includes('ss31') || n.includes('elamipretide'))        return 'ss-31-10mg';
-  if (n.includes('semax'))                                                             return 'semax-10mg';
-  if (n.includes('selank'))                                                            return 'selank-10mg';
-  if (n.includes('dsip'))                                                              return 'dsip-5mg';
-  if (n.includes('nad') && n.includes('1000'))                                        return 'nad-1000mg';
-  if (n.includes('nad') && n.includes('100'))                                         return 'nad-100mg';
-  if (n.includes('nad'))                                                               return 'nad-500mg';
-  if (n.includes('melanotan'))                                                         return 'melanotan-ii-10mg';
-  if (n.includes('bacteriostatic') || n.includes('bac water') || n.includes('reconstitution')) return 'reconstitution-liquid-30ml';
-
-  return null;
-}
 
 async function fetchAllCatalogItems() {
   const items = [];
@@ -128,13 +83,40 @@ exports.handler = async () => {
       }
     }
 
+    // ── Stock source ─────────────────────────────────────────────────────────
+    // Added 2026-08-17. Square's sold_out flag is binary and only moves when its
+    // count crosses zero — the storefront could never tell 1 vial from 100, and
+    // Square only knows about stock that passed through Square.
+    //
+    // With STOCK_SOURCE=dashboard the real counts decide instead, and the
+    // response carries the actual number so the page can say "only 2 left".
+    //
+    // 🔑 FAILS OPEN. If the dashboard cannot answer, or has never heard of a
+    // product, that product keeps whatever Square said. A reporting outage must
+    // never paint a sold-out sign over stock you actually have — a false
+    // "sold out" is a lost sale nobody ever hears about.
+    let source = 'square';
+    if (stockSource() === 'dashboard') {
+      const stock = await fetchStock();
+      if (stock) {
+        source = 'dashboard';
+        for (const [id, entry] of Object.entries(stock)) {
+          if (!result[id]) continue;              // not sold on the site
+          result[id].onHand  = entry.on_hand;
+          result[id].soldOut = entry.on_hand <= 0;
+        }
+      }
+    }
+
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=300',
+        // Shorter once real counts drive the page: a stale sold-out flag was
+        // merely untidy, a stale COUNT gets quoted back to a customer.
+        'Cache-Control': source === 'dashboard' ? 'public, max-age=60' : 'public, max-age=300',
       },
-      body: JSON.stringify(result),
+      body: JSON.stringify({ ...result, _source: source }),
     };
   } catch (err) {
     console.error('get-inventory error:', err.message);

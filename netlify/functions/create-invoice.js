@@ -25,6 +25,8 @@
 
 const { syncOrder } = require('./_order-sync');
 const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
+const { checkAvailability, shortageMessage } = require('./_stock');
+const { nameToId } = require('./_catalog-map');
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
@@ -125,41 +127,6 @@ function sanitizeShipping(rawAmount, fulfillment, subtotal) {
 // IMPORTANT: pass the COMBINED "item + variation" name — some Square items hold
 // multiple variations that belong to different site ids (e.g. the Wolverine
 // item's 10/10 Stack and 5/5 Blend), so the size must come from the variation.
-function nameToId(name) {
-  const n = name.toLowerCase();
-  if (n.includes('klow'))                                                      return 'klow-blend';
-  if (n.includes('glow'))                                                      return 'glow-blend';
-  if (n.includes('phoenix') && (n.includes('12') || n.includes('new')))       return 'phoenix-blend-12-2';
-  if (n.includes('phoenix'))                                                   return 'phoenix-blend';
-  if (n.includes('tesamorelin') && n.includes('ipamorelin') && n.includes('12')) return 'phoenix-blend-12-2';
-  if (n.includes('tesamorelin') && n.includes('ipamorelin'))                  return 'phoenix-blend';
-  if (n.includes('wolverine')) {
-    if (n.includes('10mg/10mg') || n.includes('10/10') || n.includes('(10mg')) return 'wolverine-stack';
-    if (n.includes('5mg/5mg')   || n.includes('5/5')   || n.includes('(5mg'))  return 'wolverine-blend-5mg';
-    return null; // size not present in the name — don't guess
-  }
-  if (n.includes('cjc'))                                                       return 'cjc1295-ipamorelin';
-  if (n.includes('ipamorelin'))                                                return 'ipamorelin-10mg';
-  if (n.includes('retatrutide') && n.includes('24'))                           return 'retatrutide-24mg';
-  if (n.includes('retatrutide') && n.includes('15'))                           return 'retatrutide-15mg';
-  if (n.includes('retatrutide') && n.includes('10'))                           return 'retatrutide-10mg';
-  if (n.includes('retatrutide'))                                               return null;
-  if (n.includes('tesamorelin'))                                               return 'tesamorelin-10mg';
-  if (n.includes('sermorelin'))                                                return 'sermorelin-10mg';
-  if (n.includes('mots-c') || n.includes('mots c'))                           return 'mots-c-10mg';
-  if ((n.includes('ghk-cu') || n.includes('ghk cu')) && n.includes('50'))    return 'ghk-cu-50mg';
-  if (n.includes('ghk-cu') || n.includes('ghk cu'))                           return 'ghk-cu-100mg';
-  if (n.includes('ss-31') || n.includes('ss31') || n.includes('elamipretide')) return 'ss-31-10mg';
-  if (n.includes('semax'))                                                     return 'semax-10mg';
-  if (n.includes('selank'))                                                    return 'selank-10mg';
-  if (n.includes('dsip'))                                                      return 'dsip-5mg';
-  if (n.includes('nad') && n.includes('1000'))                                 return 'nad-1000mg';
-  if (n.includes('nad') && n.includes('100'))                                  return 'nad-100mg';
-  if (n.includes('nad'))                                                       return 'nad-500mg';
-  if (n.includes('melanotan'))                                                 return 'melanotan-ii-10mg';
-  if (n.includes('bacteriostatic') || n.includes('bac water') || n.includes('reconstitution')) return 'reconstitution-liquid-30ml';
-  return null;
-}
 
 async function adjustInventory(items) {
   // Fetch catalog to build siteId -> Square variationId map
@@ -487,6 +454,24 @@ exports.handler = async (event) => {
     const subtotal   = cleanItems.reduce((s, i) => s + i.price * i.qty, 0);
     const shipping   = sanitizeShipping(shippingAmount, fulfillment, subtotal);
     const shipLabel  = shippingLabel ? String(shippingLabel).slice(0, 80) : null;
+
+    // ── Stock gate ───────────────────────────────────────────────────────────
+    // Added 2026-08-17. Until now nothing checked stock: a customer could order
+    // 10 vials of something with 1 on the shelf and checkout would happily
+    // succeed, because the storefront only ever saw Square's binary sold-out
+    // flag and never a quantity.
+    //
+    // 🔑 THIS RUNS BEFORE THE ORDER EXISTS, ON PURPOSE. Refusing here is a clean
+    // 400 the customer can act on. Refusing *after* the order is created would
+    // break this file's one hard rule and strand a real order, which is exactly
+    // what cost 14 of them on 2026-08-13.
+    //
+    // It fails open: if the dashboard cannot answer, or has never heard of the
+    // product, the sale proceeds. A reporting outage must never refuse money.
+    const availability = await checkAvailability(cleanItems);
+    if (!availability.ok) {
+      throw new ValidationError(shortageMessage(availability.shortages));
+    }
 
     const orderNum   = orderNumber();
     const customerId = await findOrCreateCustomer(customerName, customerEmail, customerPhone);
