@@ -379,7 +379,7 @@
             <th class="num">90d</th><th class="num">Sold ever</th>
             <th class="num">Months cover</th><th class="num">Price</th>
             <th class="num">Unit cost</th><th class="num">Margin</th>
-            <th class="num">Stock at cost</th>
+            <th class="num">Stock at cost</th><th></th>
           </tr></thead>
           <tbody id="inv-all-body"></tbody>
         </table>
@@ -591,6 +591,65 @@
         <input id="lab-whatif" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLabelWhatIf()">
       </div>
       <div id="lab-whatif-out" class="sub-note" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Stock adjustment ── -->
+<div id="adj-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;overflow-y:auto;padding:24px 12px;">
+  <div class="panel-card" style="max-width:560px;margin:0 auto;">
+    <h3 id="adj-title">Adjust stock</h3>
+    <p class="sub-note" style="margin:-4px 0 16px;">
+      Corrections are recorded as <b>new movements</b>, never by editing history — so what was believed
+      and what was found both stay visible.
+    </p>
+
+    <div class="field" style="margin-bottom:14px;">
+      <label>What happened</label>
+      <select id="adj-mode" onchange="renderAdjustForm()">
+        <option value="RECOUNT">I counted the shelf</option>
+        <option value="REMOVE">Remove stock (damaged, lost, transferred)</option>
+        <option value="ADD">Add stock (returned, found, transferred in)</option>
+      </select>
+    </div>
+
+    <div class="field-grid">
+      <div class="field">
+        <label id="adj-qty-label">Counted total</label>
+        <input id="adj-qty" class="num-in" type="text" inputmode="numeric" placeholder="0" oninput="renderAdjustPreview()">
+        <div class="hint" id="adj-qty-hint"></div>
+      </div>
+      <div class="field" id="adj-reason-wrap" style="display:none;">
+        <label>Reason</label>
+        <select id="adj-reason"></select>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input id="adj-date" type="date">
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Note</label>
+      <input id="adj-note" placeholder="e.g. box held 19, not 20">
+    </div>
+
+    <div class="alert-band" id="adj-preview" style="display:none;margin:16px 0 0;">
+      <p id="adj-preview-body"></p>
+    </div>
+
+    <div class="editor-actions">
+      <button class="btn-primary" id="adj-save" onclick="postAdjustment()">Record it</button>
+      <button class="btn-sm" onclick="closeAdjust()">Cancel</button>
+      <div class="one-way-note">A stock movement <b>cannot be deleted</b>. If this one is wrong, the fix is another movement on top of it.</div>
+    </div>
+
+    <h3 style="margin-top:24px;">Recent movements</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>When</th><th>Reason</th><th class="num">Change</th><th>Note</th></tr></thead>
+        <tbody id="adj-history"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -1023,9 +1082,12 @@ async function loadInventory() {
   }
 }
 
+let invItems = [];
+
 function renderInventory(data) {
   const items = data.items || [];
   const t     = data.totals || {};
+  invItems = items;   // the adjustment screen reads on_hand from here
 
   document.getElementById('inv-units').textContent  = t.units ?? 0;
   document.getElementById('inv-units-note').textContent =
@@ -1098,8 +1160,154 @@ function renderInventory(data) {
       <td class="num">${cost}</td>
       <td class="num">${margin}</td>
       <td class="num">${money(i.stock_cost_cents || 0)}</td>
+      <td><button class="btn-sm" onclick="openAdjust('${i.variant_id}')" title="Record a count, damage or a return">Adjust</button></td>
     </tr>`;
   }).join('');
+}
+
+// ── Stock adjustments ────────────────────────────────────────────────────────
+// Receiving a purchase order is all-or-nothing and one-way. This covers the
+// rest of reality: the box that held 19 instead of 20, the cracked vial, the
+// return, the shelf that disagrees with the computer.
+//
+// 🔑 A recount asks for the COUNTED TOTAL, not a difference. After counting a
+// shelf you know "there are 19", not "there are two fewer than the computer
+// thinks" — making a human do that subtraction is how a recount gets recorded
+// backwards. The database reads the current figure and derives the delta.
+let adjItem = null;
+
+const ADJ_REASONS = {
+  REMOVE: [['WASTE', 'Damaged or expired'], ['ADJUSTMENT', 'Correction'], ['TRANSFER', 'Transferred out']],
+  ADD:    [['RETURN', 'Customer return'], ['ADJUSTMENT', 'Correction'], ['TRANSFER', 'Transferred in']],
+};
+
+function openAdjust(variantId) {
+  const it = (invItems || []).find(i => i.variant_id === variantId);
+  if (!it) return;
+  adjItem = it;
+  document.getElementById('adj-title').textContent = `Adjust stock — ${invName(it)}`;
+  document.getElementById('adj-mode').value = 'RECOUNT';
+  document.getElementById('adj-qty').value = '';
+  document.getElementById('adj-note').value = '';
+  document.getElementById('adj-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('adj-modal').style.display = 'block';
+  renderAdjustForm();
+  loadAdjustHistory(variantId);
+}
+
+function closeAdjust() {
+  document.getElementById('adj-modal').style.display = 'none';
+  adjItem = null;
+}
+
+function renderAdjustForm() {
+  const mode = document.getElementById('adj-mode').value;
+  const wrap = document.getElementById('adj-reason-wrap');
+  const sel  = document.getElementById('adj-reason');
+  document.getElementById('adj-qty-label').textContent =
+    mode === 'RECOUNT' ? 'Counted total' : (mode === 'REMOVE' ? 'How many to remove' : 'How many to add');
+  document.getElementById('adj-qty-hint').innerHTML =
+    mode === 'RECOUNT'
+      ? `The system currently has <b>${adjItem ? adjItem.on_hand : 0}</b>. Enter what you actually counted.`
+      : 'A count, not a new total.';
+  wrap.style.display = mode === 'RECOUNT' ? 'none' : 'block';
+  if (mode !== 'RECOUNT') {
+    sel.innerHTML = ADJ_REASONS[mode].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  }
+  renderAdjustPreview();
+}
+
+// Say what will happen before it happens — a stock movement can't be undone.
+function renderAdjustPreview() {
+  const band = document.getElementById('adj-preview');
+  const body = document.getElementById('adj-preview-body');
+  const mode = document.getElementById('adj-mode').value;
+  const raw  = document.getElementById('adj-qty').value.trim();
+  const n    = parseInt(raw.replace(/[^\d]/g, ''), 10);
+  if (!adjItem || raw === '' || !Number.isFinite(n)) { band.style.display = 'none'; return; }
+
+  const before = adjItem.on_hand;
+  const delta  = mode === 'RECOUNT' ? n - before : (mode === 'REMOVE' ? -n : n);
+  const after  = before + delta;
+
+  if (delta === 0) {
+    band.style.display = 'block';
+    body.innerHTML = `That matches what the system already has (<b>${before}</b>). Nothing would be recorded.`;
+    return;
+  }
+  if (after < 0) {
+    band.style.display = 'block';
+    body.innerHTML = `That would leave <b>${after}</b> vials, which can't be right. ` +
+      `If the recorded figure is wrong, switch to <b>I counted the shelf</b> and enter what you actually have.`;
+    return;
+  }
+  band.style.display = 'block';
+  body.innerHTML = `<b>${before}</b> → <b>${after}</b> vials ` +
+    `(${delta > 0 ? '+' : ''}${delta}). This is recorded as a new movement and can't be deleted.`;
+}
+
+async function loadAdjustHistory(variantId) {
+  const tb = document.getElementById('adj-history');
+  tb.innerHTML = '<tr><td colspan="4" class="dim" style="padding:12px;">Loading…</td></tr>';
+  try {
+    const res = await fetch(`/.netlify/functions/adjust-stock?variant_id=${encodeURIComponent(variantId)}&limit=15`, {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Could not load history');
+    tb.innerHTML = (d.movements || []).map(m => `<tr>
+        <td class="dim" style="font-size:.78rem;">${(m.occurred_at || '').slice(0, 10)}</td>
+        <td>${esc(m.reason)}${m.order_no ? ` <span class="dim">${esc(m.order_no)}</span>` : ''}</td>
+        <td class="num" style="color:${m.delta < 0 ? '#dc3545' : '#28a745'};font-weight:700;">${m.delta > 0 ? '+' : ''}${m.delta}</td>
+        <td class="dim" style="font-size:.8rem;">${esc(m.note || '')}</td>
+      </tr>`).join('') ||
+      '<tr><td colspan="4" class="dim" style="padding:12px;">No movements recorded yet.</td></tr>';
+  } catch (err) {
+    tb.innerHTML = `<tr><td colspan="4" class="dim" style="padding:12px;">${esc(err.message)}</td></tr>`;
+  }
+}
+
+async function postAdjustment() {
+  if (!adjItem) return;
+  const mode = document.getElementById('adj-mode').value;
+  const n = parseInt(document.getElementById('adj-qty').value.replace(/[^\d]/g, ''), 10);
+  if (!Number.isFinite(n) || n < 0) { showToast('Enter a whole number'); return; }
+
+  const delta = mode === 'RECOUNT' ? n - adjItem.on_hand : (mode === 'REMOVE' ? -n : n);
+  if (delta === 0) { showToast('That matches the current figure — nothing to record'); return; }
+  if (!confirm(`Record this?\n\n${invName(adjItem)}: ${adjItem.on_hand} → ${adjItem.on_hand + delta} vials\n\n` +
+               `Stock movements cannot be deleted.`)) return;
+
+  const btn = document.getElementById('adj-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/.netlify/functions/adjust-stock', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({
+        variant_id: adjItem.variant_id,
+        mode,
+        quantity: n,
+        reason: mode === 'RECOUNT' ? null : document.getElementById('adj-reason').value,
+        note: document.getElementById('adj-note').value || null,
+        occurred_at: document.getElementById('adj-date').value || null,
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Could not record it');
+    if (!d.changed) { showToast(d.message || 'Nothing to record'); return; }
+    showToast(`Recorded — ${invName(adjItem)} is now ${d.after}`);
+    closeAdjust();
+    invLoaded = false;
+    loadInventory();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── Dashboard freshness ──────────────────────────────────────────────────────
