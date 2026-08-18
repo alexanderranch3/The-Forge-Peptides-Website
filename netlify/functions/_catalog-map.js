@@ -39,6 +39,7 @@ function nameToId(name) {
   if (n.includes('cjc'))                                                               return 'cjc1295-ipamorelin';
 
   // ── Retatrutide — all sizes ───────────────────────────────────────────────
+  if (n.includes('retatrutide') && n.includes('30'))                                  return 'retatrutide-30mg';
   if (n.includes('retatrutide') && n.includes('24'))                                  return 'retatrutide-24mg';
   if (n.includes('retatrutide') && n.includes('15'))                                  return 'retatrutide-15mg';
   if (n.includes('retatrutide') && n.includes('10'))                                  return 'retatrutide-10mg';
@@ -46,6 +47,23 @@ function nameToId(name) {
 
   // ── Ipamorelin (standalone) ───────────────────────────────────────────────
   if (n.includes('ipamorelin'))                                                        return 'ipamorelin-10mg';
+
+  // ── BPC-157 (standalone ONLY) ─────────────────────────────────────────────
+  // 🚨 Every OTHER BPC-157 product in this catalog is a blend: Wolverine
+  // (BPC-157/TB-500), Glow and KLOW all contain it, and all three are matched
+  // ABOVE by their own names. This test must never be moved above them.
+  //
+  // A wildcard 'bpc' match once resolved standalone "BPC-157 (10mg)" onto the
+  // Wolverine 10/10 BLEND — it would have posted 10 vials and a $10.52 cost
+  // onto a $56.25 product. So this matches only when nothing in the name
+  // signals a blend AND the 10mg size is explicit. Anything else returns null
+  // rather than guess: a null fails open, a wrong id decrements the wrong
+  // stock and charges the wrong money.
+  if (n.includes('bpc')) {
+    const blended = n.includes('tb-500') || n.includes('tb500') || n.includes('tb 500')
+                 || n.includes('blend')  || n.includes('stack') || n.includes('/');
+    return (!blended && n.includes('10')) ? 'bpc-157-10mg' : null;
+  }
 
   // ── Individual peptides ───────────────────────────────────────────────────
   if (n.includes('tesamorelin'))                                                       return 'tesamorelin-10mg';
