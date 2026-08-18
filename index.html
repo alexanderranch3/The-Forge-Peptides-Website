@@ -1081,6 +1081,7 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
       <a href="#about">About Us</a>
+      <a href="#" id="nav-account" onclick="openSignIn(event)">Sign in</a>
     </div>
     <div class="nav-right">
       <a href="#catalog" class="nav-cta">Shop Now</a>
@@ -1750,6 +1751,43 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   </div>
 </section>
 
+<!-- Sign-in modal. Passwordless: an emailed single-use link, no password field
+     anywhere, so there is nothing for this page to store or leak. -->
+<div id="forge-signin-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9996;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#111;border:1px solid rgba(255,106,0,0.25);border-radius:14px;max-width:420px;width:100%;padding:26px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div>
+        <div style="color:#FF6A00;font-size:0.72rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">The Forge Peptides</div>
+        <h3 style="color:#fff;margin:6px 0 0;font-size:1.35rem;">Save your details</h3>
+      </div>
+      <button onclick="closeSignIn()" aria-label="Close" style="background:none;border:none;color:#888;font-size:1.5rem;line-height:1;cursor:pointer;">&times;</button>
+    </div>
+
+    <div id="signin-step-email">
+      <p style="color:#999;font-size:0.88rem;line-height:1.55;margin:14px 0 16px;">
+        Enter your email and we'll send you a sign-in link. No password to remember.
+        Next time you order, your name, phone and address fill in automatically.
+      </p>
+      <input id="signin-email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"
+        style="width:100%;padding:13px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:10px;color:#fff;font-size:0.95rem;outline:none;box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter')requestSignIn()">
+      <button id="signin-submit" onclick="requestSignIn()"
+        style="width:100%;margin-top:12px;padding:14px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.95rem;cursor:pointer;">Email me a link</button>
+      <div id="signin-error" style="display:none;color:#ff8a7a;font-size:0.82rem;margin-top:10px;"></div>
+    </div>
+
+    <div id="signin-step-sent" style="display:none;">
+      <p style="color:#ccc;font-size:0.92rem;line-height:1.6;margin:16px 0 0;">
+        <strong style="color:#fff;">Check your email.</strong><br>
+        If that address has ordered from us, a sign-in link is on its way. It works
+        once and expires in 20 minutes.
+      </p>
+      <button onclick="closeSignIn()"
+        style="width:100%;margin-top:18px;padding:13px;background:transparent;color:#999;border:1px solid rgba(255,255,255,0.14);border-radius:10px;font-size:0.9rem;cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- FAQ -->
 <section class="faq" id="faq">
   <div class="wrap">
@@ -2002,6 +2040,145 @@ function applySoldOut(btn, id) {
 }
 
 // ── Retatrutide size selector ──────────────────────────────────────────────────
+// ── Customer accounts ───────────────────────────────────────────────────────
+// 🔑 THIS PAGE NEVER TALKS TO THE DATABASE. Every call here goes to a Netlify
+// function; there is no Supabase key in this file and there must never be one.
+// RLS is off on every table, so a key here would expose customer records and
+// cost data to anyone who opened devtools.
+//
+// 🔑 The session is an HttpOnly cookie, so this script cannot read it — that is
+// the point. "Am I signed in?" is answered by asking the server, never by
+// inspecting a token.
+let forgeAccount = null;
+
+async function loadAccount() {
+  try {
+    const res = await fetch('/.netlify/functions/account', { credentials: 'same-origin' });
+    forgeAccount = res.ok ? await res.json() : null;
+  } catch (_) { forgeAccount = null; }
+  renderAccountNav();
+  return forgeAccount;
+}
+
+function renderAccountNav() {
+  const link = document.getElementById('nav-account');
+  if (!link) return;
+  if (forgeAccount && forgeAccount.signedIn) {
+    link.textContent = 'Sign out';
+    link.onclick = signOut;
+    link.title = forgeAccount.email;
+  } else {
+    link.textContent = 'Sign in';
+    link.onclick = openSignIn;
+    link.removeAttribute('title');
+  }
+}
+
+function openSignIn(event) {
+  if (event) event.preventDefault();
+  document.getElementById('signin-step-email').style.display = 'block';
+  document.getElementById('signin-step-sent').style.display = 'none';
+  document.getElementById('signin-error').style.display = 'none';
+  document.getElementById('forge-signin-modal').style.display = 'flex';
+  document.getElementById('signin-email').focus();
+}
+
+function closeSignIn() {
+  document.getElementById('forge-signin-modal').style.display = 'none';
+}
+
+async function requestSignIn() {
+  const input = document.getElementById('signin-email');
+  const err = document.getElementById('signin-error');
+  const btn = document.getElementById('signin-submit');
+  const email = (input.value || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    err.textContent = 'Please enter a valid email address.';
+    err.style.display = 'block';
+    return;
+  }
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await fetch('/.netlify/functions/request-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+  } catch (_) { /* the confirmation is deliberately unconditional — see below */ }
+  btn.disabled = false; btn.textContent = 'Email me a link';
+  // 🚨 The same confirmation shows whichever way it went. Reporting "no such
+  // account" would turn this box into a way to test who buys peptides from us.
+  document.getElementById('signin-step-email').style.display = 'none';
+  document.getElementById('signin-step-sent').style.display = 'block';
+}
+
+async function signOut(event) {
+  if (event) event.preventDefault();
+  try {
+    await fetch('/.netlify/functions/account', { method: 'DELETE', credentials: 'same-origin' });
+  } catch (_) { /* fall through — the nav re-renders from a fresh load either way */ }
+  forgeAccount = null;
+  renderAccountNav();
+}
+
+/** Fill blank checkout fields from the saved account. Never overwrites input. */
+function applySavedDetails() {
+  if (!forgeAccount || !forgeAccount.signedIn) return;
+  const d = forgeAccount.details || {};
+  const parts = String(d.fullName || '').trim().split(/\s+/);
+  const setIfBlank = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && !el.value && val) el.value = val;
+  };
+  if (parts.length) {
+    setIfBlank('forge-firstname', parts[0]);
+    setIfBlank('forge-lastname', parts.slice(1).join(' '));
+  }
+  setIfBlank('forge-email', forgeAccount.email);
+  setIfBlank('forge-phone', d.phone);
+  setIfBlank('forge-street', d.line1);
+  setIfBlank('forge-city', d.city);
+  setIfBlank('forge-state', d.state);
+  setIfBlank('forge-zip', d.postal);
+  const banner = document.getElementById('forge-prefill-note');
+  if (banner) banner.style.display = 'block';
+}
+
+/** Save what was just typed, so the next order is prefilled. Best-effort. */
+async function saveDetailsFromCheckout(payload) {
+  if (!forgeAccount || !forgeAccount.signedIn) return;
+  try {
+    await fetch('/.netlify/functions/account', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: payload.customerName, phone: payload.customerPhone,
+        line1: payload.street, line2: '', city: payload.city,
+        state: payload.state, postal: payload.zip, country: 'US',
+      }),
+    });
+  } catch (_) { /* never block a placed order on a convenience save */ }
+}
+
+/** Show the outcome of following an emailed link, then tidy the URL. */
+function handleSignInRedirect() {
+  const p = new URLSearchParams(location.search);
+  const status = p.get('signin');
+  if (!status) return;
+  const msg = {
+    ok: "You're signed in. Your details will fill in automatically at checkout.",
+    expired: 'That sign-in link has expired or was already used. Request a new one.',
+    invalid: 'That sign-in link was not valid. Request a new one.',
+    error: 'Something went wrong signing you in. Please try again.',
+    unavailable: 'Sign-in is temporarily unavailable.',
+  }[status];
+  if (msg) alert(msg);
+  p.delete('signin');
+  history.replaceState({}, '', location.pathname + (p.toString() ? '?' + p : '') + location.hash);
+}
+
+document.addEventListener('DOMContentLoaded', () => { handleSignInRedirect(); loadAccount(); });
+
 function selectRetaSize(btn) {
   btn.closest('.reta-sizes').querySelectorAll('.reta-size').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -2430,6 +2607,10 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
             <span id="forge-promo-status" style="font-size:0.82rem;min-width:70px;text-align:right;"></span>
           </div>
 
+          <div id="forge-prefill-note" style="display:none;background:rgba(255,106,0,0.08);border:1px solid rgba(255,106,0,0.22);border-radius:var(--r-lg);padding:10px 13px;color:#bbb;font-size:0.82rem;line-height:1.5;">
+            Filled in from your saved details — edit anything that's changed.
+          </div>
+
           <!-- SMS consent. Two SEPARATE opt-ins, both unchecked by default, and
                neither one required to place the order. Order texts and marketing
                texts are different asks with different legal footing, so bundling
@@ -2621,6 +2802,10 @@ function updateForgeBar() {
 function openOrderModal() {
   renderOrderSummary();
   document.getElementById('forge-order-modal').style.display = 'flex';
+  // Fill from the saved account if there is one. Deliberately does NOT overwrite
+  // anything already typed — someone shipping to a different address this once
+  // should not have it silently reverted.
+  applySavedDetails();
 }
 
 function closeOrderModal() {
@@ -2914,6 +3099,9 @@ async function submitForgeOrder(e) {
     });
     const data = await res.json();
     if (res.ok && data.success) {
+      // Fire-and-forget: the order is already placed, and a convenience save must
+      // never be able to fail it.
+      saveDetailsFromCheckout(payload);
       document.getElementById('forge-invoice-num').textContent    = data.invoiceNumber || '';
       document.getElementById('forge-invoice-num-2').textContent  = data.invoiceNumber || '';
       document.getElementById('forge-confirm-email').textContent = payload.customerEmail;
