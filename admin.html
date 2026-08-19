@@ -93,6 +93,12 @@
     .badge-other     { background: rgba(108,117,125,0.15);color: #6c757d; }
     .badge-pickup    { background: rgba(111,66,193,0.15); color: #a88ef7; }
 
+    .item-line { margin-bottom: 4px; }
+    .item-line .sku {
+      display: block; color: #6f6f6f; font-size: .68rem; letter-spacing: .09em;
+      font-family: ui-monospace, Menlo, Consolas, monospace; margin-top: 1px;
+    }
+
     /* Void is the one destructive action on this screen. It reads as dangerous
        on purpose — every other button here is recoverable and this one is not. */
     /* The invoice toolbar. Sticky so Close is reachable from anywhere in a
@@ -1089,9 +1095,12 @@ function renderTable() {
            <div class="email">${esc(order.customerEmail)}</div>
          </div>`;
 
+    // The SKU sits under each line so it can be read against the vial before it
+    // goes in the box — the whole reason it exists.
     const items = order.items.map(i =>
-      `<span class="qty">${i.qty}×</span> ${esc(i.name)}`
-    ).join('<br>');
+      `<div class="item-line"><span class="qty">${i.qty}×</span> ${esc(i.name)}${
+        i.sku ? `<span class="sku">${esc(i.sku)}</span>` : ''}</div>`
+    ).join('');
 
     const addrOneLiner = order.shipTo
       ? `${order.shipTo.street}, ${order.shipTo.city}, ${order.shipTo.state} ${order.shipTo.zip}`

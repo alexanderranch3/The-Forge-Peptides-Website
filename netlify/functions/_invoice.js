@@ -44,14 +44,37 @@ function formatDate(iso) {
  * listing tax separately is what made a receipt read like a double charge on
  * 2026-08-14; the total was right and the breakdown was not.
  */
+// 🔑 Safe to require: _catalog.js depends on nothing. Requiring create-invoice.js
+// instead would be a cycle — it already requires this file — and Node would have
+// handed us a half-built module with CATALOG undefined, printing blank SKUs with
+// nothing to show why.
+const { packingLine } = require('./_catalog');
+
 function invoiceModel({ order, customer, address }) {
-  const items = (order.line_items || []).map((li) => ({
-    name: li.name || 'Item',
-    qty: Number(li.quantity || 1),
-    unit_cents: li.base_price_money?.amount ?? 0,
-    amount_cents: li.gross_sales_money?.amount
-      ?? (li.base_price_money?.amount || 0) * Number(li.quantity || 1),
-  }));
+  // 🚨 THE INVOICE HAS TO IDENTIFY THE VIAL TO BE PACKED. Frank, 2026-08-19:
+  // "the items were not specific. For example, Wolverine Blend came back. I
+  // didn't know which one it was or what the amounts were." Two Wolverines exist
+  // at different strengths and prices, and so do two Phoenixes — a line that
+  // cannot tell them apart is a mis-pack, and the customer finds out first.
+  //
+  // 🔑 The stored name is REPLACED for display, never in Square. `li.name` is
+  // what resolve_variant matches against variant_aliases to deduct stock; it
+  // stays byte-identical. Only what a human reads changes.
+  const items = (order.line_items || []).map((li) => {
+    const stored = li.name || 'Item';
+    const { sku, label } = packingLine(stored);
+    return {
+      name: label,
+      // Null for anything not in the catalog — shipping lines, and old typed-at-
+      // the-till names. A SKU that might be wrong is worse than none, because
+      // its only job is to be the thing you trust when checking a vial.
+      sku,
+      qty: Number(li.quantity || 1),
+      unit_cents: li.base_price_money?.amount ?? 0,
+      amount_cents: li.gross_sales_money?.amount
+        ?? (li.base_price_money?.amount || 0) * Number(li.quantity || 1),
+    };
+  });
 
   const subtotal = items.reduce((n, i) => n + i.amount_cents, 0);
   const paid = String(order.metadata?.payment_status || '').toUpperCase() === 'PAID'
@@ -78,7 +101,10 @@ function invoiceModel({ order, customer, address }) {
 function invoiceHtml(m) {
   const rows = m.items.map((i, idx) => `
     <tr>
-      <td style="padding:14px 12px;border-bottom:1px solid #ececec;color:#1a1a1a;font-size:14px;${idx === 0 ? '' : ''}">${esc(i.name)}</td>
+      <td style="padding:14px 12px;border-bottom:1px solid #ececec;color:#1a1a1a;font-size:14px;">${esc(i.name)}${
+        // The SKU is the thing to read against the vial before it goes in the box.
+        i.sku ? `<div style="color:#8a8a8a;font-size:11px;letter-spacing:.08em;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:3px;">${esc(i.sku)}</div>` : ''
+      }</td>
       <td style="padding:14px 12px;border-bottom:1px solid #ececec;color:#555;font-size:14px;text-align:center;">${i.qty}</td>
       <td style="padding:14px 12px;border-bottom:1px solid #ececec;color:#555;font-size:14px;text-align:right;">${money(i.unit_cents)}</td>
       <td style="padding:14px 12px;border-bottom:1px solid #ececec;color:#1a1a1a;font-size:14px;text-align:right;font-weight:600;">${money(i.amount_cents)}</td>

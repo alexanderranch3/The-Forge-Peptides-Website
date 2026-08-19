@@ -113,6 +113,10 @@ async function fetchCustomers(customerIds) {
 //
 // Both are non-fatal: if Supabase cannot answer, the Square orders still render.
 // A dashboard outage must not blank the order list.
+// The same packing identity the invoice prints, so the two never disagree
+// about which vial a line means.
+const { packingLine } = require('./_catalog');
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -182,7 +186,12 @@ async function fetchDashboardOnlyOrders(since) {
     fulfillmentType:  'LOCAL_PICKUP',
     channel:          r.channel === 'POS' ? 'POS' : 'WEB',
     shipTo:           null,
-    items:            Array.isArray(r.items) ? r.items : [],
+    // Counter sales carry the dashboard's own variant name; run it through the
+    // same resolver so a walk-in order reads identically to a web one.
+    items: (Array.isArray(r.items) ? r.items : []).map((i) => {
+      const { sku, label } = packingLine(i.name);
+      return { ...i, name: label, sku };
+    }),
     subtotal:         Number(r.subtotal || 0),
     shippingAmount:   Number(r.shipping_amount || 0),
     shippingLabel:    null,
@@ -283,11 +292,18 @@ exports.handler = async (event) => {
       // Line items (exclude the shipping line)
       const items = (order.line_items || [])
         .filter(li => !li.name?.toLowerCase().startsWith('shipping'))
-        .map(li => ({
-          name:  li.name,
-          qty:   parseInt(li.quantity, 10),
-          price: (li.base_price_money?.amount || 0) / 100,
-        }));
+        .map(li => {
+          // 🔑 The specific name and the SKU, resolved the same way the invoice
+          // resolves them. Frank packs from this list, so "Wolverine Stack" with
+          // no strength on it is a mis-pack waiting to happen.
+          const { sku, label } = packingLine(li.name);
+          return {
+            name:  label,
+            sku,
+            qty:   parseInt(li.quantity, 10),
+            price: (li.base_price_money?.amount || 0) / 100,
+          };
+        });
 
       const shippingLine   = (order.line_items || []).find(li => li.name?.toLowerCase().startsWith('shipping'));
       const shippingAmount = shippingLine ? (shippingLine.base_price_money?.amount || 0) / 100 : 0;

@@ -3,7 +3,7 @@
  * check-prices.js — price-drift gate (local + CI).
  *
  * Prices currently live in THREE places that must agree:
- *   1. netlify/functions/create-invoice.js  — CATALOG  (server-side source of truth:
+ *   1. netlify/functions/_catalog.js        — CATALOG  (server-side source of truth:
  *                                              this is what the customer is actually charged)
  *   2. index.html                            — product cards, variant selectors, price list
  *   3. products.json                         — landing-page data (subset: 8 hero families)
@@ -25,13 +25,54 @@ const ROOT = __dirname;
 function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 
 // ── 1. Reference: CATALOG in create-invoice.js ────────────────────────────────
-function loadCatalog() {
-  const src = read('netlify/functions/create-invoice.js');
-  const map = {};
-  const re = /'([a-z0-9-]+)':\s*\{\s*name:\s*'[^']*',\s*price:\s*(\d+(?:\.\d+)?)\s*\}/g;
+//
+// ⚠️ Parsed by regex rather than required, so this stays a zero-dependency
+// script that cannot execute the function it is checking. That makes it
+// sensitive to the shape of the literal: when `sku` was added on 2026-08-19 the
+// old two-field pattern silently matched NOTHING and the gate reported "could
+// not parse" — which at least failed loudly. Field order is not assumed here;
+// each entry's body is captured and its fields read individually.
+function loadEntries() {
+  const src = read('netlify/functions/_catalog.js');
+  const start = src.indexOf('const CATALOG = {');
+  if (start < 0) return {};
+  const body = src.slice(start, src.indexOf('\n};', start));
+  const entries = {};
+  const re = /'([a-z0-9-]+)':\s*\{([^}]*)\}/g;
   let m;
-  while ((m = re.exec(src)) !== null) map[m[1]] = Number(m[2]);
+  while ((m = re.exec(body)) !== null) {
+    const fields = m[2];
+    const price = /price:\s*(\d+(?:\.\d+)?)/.exec(fields);
+    const sku   = /sku:\s*'([^']+)'/.exec(fields);
+    const name  = /name:\s*'([^']*)'/.exec(fields);
+    if (!price) continue;
+    entries[m[1]] = { price: Number(price[1]), sku: sku ? sku[1] : null, name: name ? name[1] : null };
+  }
+  return entries;
+}
+
+function loadCatalog() {
+  const map = {};
+  for (const [id, e] of Object.entries(loadEntries())) map[id] = e.price;
   return map;
+}
+
+// ── SKUs: present, unique, and not confusable with an order number ───────────
+// 🔑 A SKU exists to be read off a vial and checked against the packing list, so
+// two products sharing one is worse than none at all — it would confirm the
+// wrong vial. FP- is refused because that is the order-number series.
+function checkSkus() {
+  const entries = loadEntries();
+  const problems = [];
+  const seen = new Map();
+  for (const [id, e] of Object.entries(entries)) {
+    if (!e.sku) { problems.push(`${id} has no sku`); continue; }
+    if (!/^[A-Z0-9][A-Z0-9-]*$/.test(e.sku)) problems.push(`${id}: sku "${e.sku}" should be upper-case letters, digits and hyphens`);
+    if (/^FP-/i.test(e.sku)) problems.push(`${id}: sku "${e.sku}" starts with FP-, which is the order-number series`);
+    if (seen.has(e.sku)) problems.push(`sku "${e.sku}" is on both ${seen.get(e.sku)} and ${id}`);
+    seen.set(e.sku, id);
+  }
+  return { count: Object.keys(entries).length, problems };
 }
 
 // ── 2. Displayed prices in index.html (three patterns) ────────────────────────
@@ -72,7 +113,7 @@ function main() {
   const catalog = loadCatalog();
   const catalogIds = Object.keys(catalog);
   if (catalogIds.length === 0) {
-    console.error('✗ Could not parse CATALOG from create-invoice.js — check the regex/format.');
+    console.error('✗ Could not parse CATALOG from _catalog.js — check the regex/format.');
     process.exit(2);
   }
 
@@ -89,13 +130,24 @@ function main() {
   const shownIds = new Set(displayed.map(d => d.id));
   const unshown  = catalogIds.filter(id => !shownIds.has(id));
 
-  console.log(`Reference: create-invoice.js CATALOG (${catalogIds.length} ids)`);
+  console.log(`Reference: _catalog.js CATALOG (${catalogIds.length} ids)`);
   console.log(`Checked:   ${displayed.length} displayed price(s) across index.html + products.json\n`);
 
-  if (mismatches.length === 0 && unknowns.length === 0) {
+  const skus = checkSkus();
+
+  if (mismatches.length === 0 && unknowns.length === 0 && skus.problems.length === 0) {
     console.log('✓ All displayed prices match the CATALOG. No drift.');
+    console.log(`✓ ${skus.count} SKUs, all present and unique.`);
     if (unshown.length) console.log(`  (info) CATALOG ids not shown on any page: ${unshown.join(', ')}`);
     process.exit(0);
+  }
+
+  if (skus.problems.length) {
+    console.error('────────────────────────────────────────────');
+    console.error(` SKU PROBLEM — ${skus.problems.length}:`);
+    console.error('────────────────────────────────────────────');
+    for (const p of skus.problems) console.error(`  ✗ ${p}`);
+    console.error('');
   }
 
   if (mismatches.length) {
@@ -118,7 +170,7 @@ function main() {
     console.error('');
   }
 
-  console.error('Fix so all three sources agree, then re-run. (create-invoice.js is the source of truth.)');
+  console.error('Fix so all three sources agree, then re-run. (_catalog.js is the source of truth.)');
   process.exit(1);
 }
 

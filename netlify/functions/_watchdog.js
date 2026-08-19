@@ -37,7 +37,7 @@
 
 const { nameToId } = require('./_catalog-map');
 const { variantDisplayName } = require('./_stock');
-const { CATALOG } = require('./create-invoice');
+const { CATALOG } = require('./_catalog');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;

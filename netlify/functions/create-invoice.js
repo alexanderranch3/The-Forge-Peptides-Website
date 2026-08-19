@@ -28,6 +28,13 @@ const { consentText, CURRENT_VERSION } = require('./_sms-consent');
 const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
 const { checkAvailability, shortageMessage, checkFulfillable, blockedMessage } = require('./_stock');
 const { nameToId } = require('./_catalog-map');
+const { CATALOG } = require('./_catalog');
+
+// Thrown for anything the caller got wrong, so the handler can answer 400 rather
+// than 500. ⚠️ It lived beside the CATALOG literal and came within a line of
+// being carried off with it when the catalog moved to its own module on
+// 2026-08-19 — test-stock-gate.mjs caught the ReferenceError immediately.
+class ValidationError extends Error {}
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
@@ -54,40 +61,7 @@ function orderNumber() {
   return `FP-${Date.now().toString().slice(-6)}`;
 }
 
-// ── Server-Side Catalog (source of truth for prices) ──────────────────────────
-// NEVER trust client-supplied prices or names — a manipulated POST body could
-// otherwise generate a valid invoice at any price. Keep in sync with index.html.
 
-class ValidationError extends Error {}
-
-const CATALOG = {
-  'retatrutide-10mg':           { name: 'Retatrutide 10mg',                  price: 160 },
-  'retatrutide-15mg':           { name: 'Retatrutide 15mg',                  price: 195 },
-  'retatrutide-30mg':           { name: 'Retatrutide 30mg',                  price: 275 },
-  'tesamorelin-10mg':           { name: 'Tesamorelin 10mg',                  price: 89  },
-  'sermorelin-10mg':            { name: 'Sermorelin 10mg',                   price: 119 },
-  'ipamorelin-10mg':            { name: 'Ipamorelin 10mg',                   price: 99  },
-  'mots-c-10mg':                { name: 'MOTS-C 10mg',                       price: 72  },
-  'ghk-cu-50mg':                { name: 'GHK-Cu 50mg',                       price: 75  },
-  'ghk-cu-100mg':               { name: 'GHK-Cu 100mg',                      price: 85  },
-  'ss-31-10mg':                 { name: 'SS-31 10mg',                        price: 82  },
-  'semax-10mg':                 { name: 'Semax 10mg',                        price: 99  },
-  'selank-10mg':                { name: 'Selank 10mg',                       price: 95  },
-  'dsip-5mg':                   { name: 'DSIP 5mg',                          price: 62  },
-  'nad-100mg':                  { name: 'NAD+ 100mg',                        price: 85  },
-  'nad-500mg':                  { name: 'NAD+ 500mg',                        price: 99  },
-  'nad-1000mg':                 { name: 'NAD+ 1000mg',                       price: 140 },
-  'melanotan-ii-10mg':          { name: 'Melanotan II 10mg',                 price: 65  },
-  'reconstitution-liquid-30ml': { name: 'Reconstitution Liquid 30ml',        price: 40  },
-  'bpc-157-10mg':               { name: 'BPC-157 10mg',                      price: 60  },
-  'wolverine-stack':            { name: 'Wolverine Stack',                   price: 115 },
-  'wolverine-blend-5mg':        { name: 'Wolverine Blend 5mg/5mg',           price: 100 },
-  'cjc1295-ipamorelin':         { name: 'CJC-1295 / Ipamorelin (No DAC)',    price: 99  },
-  'phoenix-blend':              { name: 'Phoenix Blend (10mg/5mg)',          price: 155 },
-  'phoenix-blend-12-2':         { name: 'Phoenix Blend (12mg/2mg)',          price: 155 },
-  'glow-blend':                 { name: 'Glow Blend',                        price: 165 },
-  'klow-blend':                 { name: 'KLOW Blend',                        price: 195 },
-};
 
 const MAX_QTY_PER_ITEM        = 50;
 const FREE_SHIPPING_THRESHOLD = 300;
@@ -591,17 +565,3 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
-
-// ── Exported for the watchdog ────────────────────────────────────────────────
-// 🔑 CATALOG is the server-side source of truth for what a customer is CHARGED.
-// The watchdog compares it against the prices the storefront actually DISPLAYS
-// in production, which is the drift that matters: the page shows $155, the
-// invoice says $160, and the customer finds out at checkout. check-prices.js
-// makes the same comparison against the files in the build; this makes it
-// against the running site. Exporting the constant is what stops the watchdog
-// from keeping its own copy of the price list — a fourth place for prices to
-// live would defeat the check it is performing.
-//
-// Adding a named export alongside `handler` does not change how Netlify invokes
-// this function; it only looks for `handler`.
-exports.CATALOG = CATALOG;
