@@ -119,7 +119,16 @@ exports.handler = async () => {
     // is not when the vials are sitting on the shelf.
     if (blocked) {
       for (const [id, reason] of Object.entries(blocked)) {
-        if (!result[id]) continue;
+        // 🚨 Create the entry when it is missing rather than skipping. `result`
+        // is built from SQUARE's catalog, and the two products created
+        // 2026-08-17 (bpc-157-10mg, retatrutide-30mg) live in the dashboard and
+        // the storefront CATALOG but not in Square — so they never appear
+        // above. Skipping them here left BPC-157 10mg looking buyable on the
+        // page with the refusal deferred to a checkout 400, which is the one
+        // place we did not want to find out.
+        // price stays null: applyLivePrices() ignores null and the card keeps
+        // its static price, which is correct.
+        if (!result[id]) result[id] = { soldOut: false, price: null };
         result[id].soldOut = true;
         result[id].unavailable = reason;
       }

@@ -174,5 +174,44 @@ console.log('\n6. the display switch');
   ok('and says the source was square', d._source, 'square');
 }
 
+console.log('\n7. a product we cannot ship is shown as unavailable, not sold out');
+{
+  const load = () => fresh('./netlify/functions/get-inventory.js');
+  // Square's catalog holds Retatrutide and has NEVER heard of BPC-157 10mg --
+  // the real situation: it was created in the dashboard 2026-08-17 and sells
+  // through the storefront CATALOG only.
+  routes['catalog/list'] = { status: 200, body: { objects: [{
+    type: 'ITEM', id: 'i1',
+    item_data: { name: 'Retatrutide', variations: [
+      { id: 'var1', item_variation_data: { name: '10mg', price_money: { amount: 16000 },
+        location_overrides: [{ location_id: 'LOC1', sold_out: false }] } },
+    ] },
+  }] } };
+  routes['v_inventory_dashboard'] = { status: 200, body: STOCK_ROWS };
+  routes['v_unfulfillable'] = { status: 200, body: [
+    { site_catalog_id: 'bpc-157-10mg', reason: 'No labels yet — stock on hand, cannot ship' },
+  ] };
+
+  process.env.STOCK_SOURCE = 'square';
+  let d = JSON.parse((await load().handler({ httpMethod: 'GET', headers: {} })).body);
+  // 🚨 The regression this pins: `if (!result[id]) continue` skipped exactly
+  // this case, so BPC-157 10mg looked buyable and only failed at checkout.
+  okTrue('a blocked product Square never heard of still appears', !!d['bpc-157-10mg']);
+  ok('and it reads sold out to the button logic', d['bpc-157-10mg'].soldOut, true);
+  okTrue('and carries the separate unavailable flag', !!d['bpc-157-10mg'].unavailable);
+  ok('with no price, so the card keeps its static one', d['bpc-157-10mg'].price, null);
+  ok('an unblocked product is untouched', d['retatrutide-10mg'].unavailable, undefined);
+
+  // A block must survive real stock: quantity is not the question.
+  process.env.STOCK_SOURCE = 'dashboard';
+  routes['v_unfulfillable'] = { status: 200, body: [
+    { site_catalog_id: 'retatrutide-10mg', reason: 'No labels yet — stock on hand, cannot ship' },
+  ] };
+  d = JSON.parse((await load().handler({ httpMethod: 'GET', headers: {} })).body);
+  ok('🚨 stock on hand cannot talk a blocked product back on sale', d['retatrutide-10mg'].soldOut, true);
+  okTrue('and it is flagged unavailable, not merely sold out', !!d['retatrutide-10mg'].unavailable);
+  delete routes['v_unfulfillable'];
+}
+
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);
 process.exit(fail ? 1 : 0);
