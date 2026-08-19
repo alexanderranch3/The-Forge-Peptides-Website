@@ -93,6 +93,12 @@
     .badge-other     { background: rgba(108,117,125,0.15);color: #6c757d; }
     .badge-pickup    { background: rgba(111,66,193,0.15); color: #a88ef7; }
 
+    /* Void is the one destructive action on this screen. It reads as dangerous
+       on purpose — every other button here is recoverable and this one is not. */
+    .btn-void { background: rgba(220,53,69,0.12); color: #dc3545; border: 1px solid rgba(220,53,69,0.35); }
+    .btn-void:hover { background: rgba(220,53,69,0.22); }
+    tr.voided td { opacity: 0.55; }
+
     .fulfillment { font-size: 0.75rem; color: #888; margin-top: 3px; }
     .items-list  { color: #ccc; line-height: 1.6; }
     .items-list .qty { color: #FF6A00; font-weight: 700; }
@@ -260,8 +266,8 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;" id="orders-controls">
       <select class="filter-select" id="days-select" onchange="loadOrders()">
-        <option value="30">Last 30 days</option>
-        <option value="60" selected>Last 60 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="60">Last 60 days</option>
         <option value="90">Last 90 days</option>
       </select>
       <button class="btn btn-primary" onclick="openSale()" title="Ring up an in-person sale">+ New sale</button>
@@ -328,6 +334,7 @@
       <option value="AWAITING">Awaiting Zelle</option>
       <option value="PAID">Paid — Ready to Ship</option>
       <option value="PARTIALLY_PAID">Partially Paid</option>
+      <option value="CANCELED">Voided</option>
     </select>
     <select class="filter-select" id="progress-filter" onchange="renderTable()">
       <option value="OPEN">Needs Action (hide completed)</option>
@@ -882,15 +889,18 @@ async function loadOrders() {
 const AWAITING_STATUSES = ['AWAITING_ZELLE', 'DRAFT', 'UNPUBLISHED', 'SENT', 'PAYMENT_PENDING'];
 
 function updateStats() {
-  const sent    = allOrders.filter(o => AWAITING_STATUSES.includes(o.status)).length;
-  const paid    = allOrders.filter(o => o.status === 'PAID').length;
-  const revenue = allOrders
+  // 🔑 Voided orders are excluded from every tile, revenue included. That is the
+  // whole point of voiding one: it never happened, so it must stop being counted.
+  const live    = allOrders.filter(o => o.status !== 'CANCELED');
+  const sent    = live.filter(o => AWAITING_STATUSES.includes(o.status)).length;
+  const paid    = live.filter(o => o.status === 'PAID').length;
+  const revenue = live
     .filter(o => o.status === 'PAID')
     .reduce((s, o) => s + o.total, 0);
 
   document.getElementById('stat-sent').textContent    = sent;
   document.getElementById('stat-paid').textContent    = paid;
-  document.getElementById('stat-total').textContent   = allOrders.length;
+  document.getElementById('stat-total').textContent   = live.length;
   document.getElementById('stat-revenue').textContent = '$' + revenue.toFixed(2);
 }
 
@@ -900,8 +910,12 @@ function renderTable() {
   const fulfillF   = document.getElementById('fulfillment-filter').value;
 
   let orders = allOrders;
+  // 🔑 "All Statuses" means every LIVE order. A voided order is archived — it is
+  // not part of the day's work and showing it by default would put cancelled
+  // business back in front of Frank every morning. Pick "Voided" to see them.
   if (statusF === 'AWAITING') orders = orders.filter(o => AWAITING_STATUSES.includes(o.status));
-  else if (statusF !== 'ALL') orders = orders.filter(o => o.status === statusF);
+  else if (statusF === 'ALL') orders = orders.filter(o => o.status !== 'CANCELED');
+  else orders = orders.filter(o => o.status === statusF);
   if (fulfillF !== 'ALL') orders = orders.filter(o => o.fulfillmentType === fulfillF);
 
   // Progress through packing and handover, which is separate from payment.
@@ -952,7 +966,7 @@ function renderTable() {
       : '';
 
     return `
-      <tr data-id="${esc(order.orderId)}">
+      <tr data-id="${esc(order.orderId)}" class="${order.status === 'CANCELED' ? 'voided' : ''}">
         <td><input type="checkbox" class="cb order-cb" data-id="${esc(order.orderId)}"></td>
         <td style="white-space:nowrap;color:#888;">${date}</td>
         <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.orderNumber)}</td>
@@ -1016,6 +1030,9 @@ function renderTable() {
               : ''}
             <button class="btn btn-sm btn-copy" onclick="showInvoice('${esc(order.orderId)}')" title="Preview the invoice, then send it">Invoice</button>
             <button class="btn btn-sm btn-copy" onclick="copyText('${esc(order.customerEmail)}')">Copy Email</button>
+            ${order.status === 'CANCELED'
+              ? ''
+              : `<button class="btn btn-sm btn-void" onclick="voidOrder('${esc(order.orderId)}','${esc(order.orderNumber)}')" title="This order should not exist: put its stock back and take it off revenue">Void</button>`}
           </div>
         </td>
       </tr>`;
@@ -1030,6 +1047,75 @@ function renderTable() {
 //
 // 🔑 Writes only to the dashboard. Square is deactivated and being replaced.
 // 🔑 Sends orderNumber for dashboard-native orders — Square has no id for them.
+// ── Voiding an order ─────────────────────────────────────────────────────────
+// An order placed by mistake has to be undone in three places at once, or the
+// books and the shelf stop agreeing: the stock has to come back, the money has
+// to come off revenue, and the order has to stop showing up as work to do.
+//
+// 🚨 NOT optimistic, unlike setFulfillment above. That one flips a label and can
+// roll back; this one returns physical stock, and showing it as done before the
+// server says so would leave Frank believing vials are back on the shelf when
+// they are not. The table reloads from the server when it succeeds.
+//
+// ⚠️ Two confirms, and the second only when real money is involved. The first is
+// about the order, the second is about the payment — they are different
+// decisions and running them together is how you click through both.
+async function voidOrder(orderId, orderNumber, acknowledgePayment = false) {
+  const order = allOrders.find(o => o.orderId === orderId);
+  const label = orderNumber || orderId;
+
+  if (!acknowledgePayment) {
+    const items = order ? order.items.map(i => `${i.qty}× ${i.name}`).join(', ') : '';
+    const ok = confirm(
+      `Void ${label}?\n\n`
+      + (items ? `${items}\n\n` : '')
+      + `• Any stock this order took will go back on the shelf\n`
+      + `• It comes off revenue and out of the order list\n`
+      + `• This cannot be undone — if it was real, ring it up again as a new sale`
+    );
+    if (!ok) return;
+  }
+
+  const reason = acknowledgePayment ? (window.__voidReason || '') : (prompt(
+    `Why is ${label} being voided? (optional — it gets written onto the order)`, ''
+  ) ?? '');
+  window.__voidReason = reason;
+
+  try {
+    const body = order?.dashboardOnly
+      ? { orderNumber: order.orderNumber, reason, acknowledgePayment }
+      : { orderId, orderNumber, reason, acknowledgePayment };
+    const res = await fetch('/.netlify/functions/void-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+      body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+
+    // The order has money recorded against it. Ask again, naming the amount.
+    if (res.status === 409 && d.needsAcknowledgement) {
+      if (confirm(`${d.hint}\n\nVoid it anyway?`)) {
+        return voidOrder(orderId, orderNumber, true);
+      }
+      return;
+    }
+    if (!res.ok) throw new Error(d.hint || d.error || 'Could not void this order');
+
+    const bits = [];
+    if (d.unitsReturned > 0) bits.push(`${d.unitsReturned} unit${d.unitsReturned === 1 ? '' : 's'} back in stock`);
+    else bits.push('no stock to return — this order never moved any');
+    if (d.revenueRemovedCents > 0) bits.push(`$${(d.revenueRemovedCents / 100).toFixed(2)} off revenue`);
+    showToast(`${d.orderNumber} voided — ${bits.join(', ')}`);
+
+    // Everything downstream of orders is now stale: stock moved and revenue moved.
+    invLoaded = false; purLoaded = false;
+    window.__voidReason = '';
+    loadOrders();
+  } catch (err) {
+    showToast('Void failed: ' + err.message);
+  }
+}
+
 async function setFulfillment(orderId, state) {
   const order = allOrders.find(o => o.orderId === orderId);
   if (!order) return;

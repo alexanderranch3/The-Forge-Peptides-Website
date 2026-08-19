@@ -138,6 +138,25 @@ async function fetchFulfillmentBySquareId() {
   return Object.fromEntries(rows.map((r) => [r.square_id, r]));
 }
 
+// Square ids the DASHBOARD has voided.
+//
+// 🚨 Square will never tell us this. Its account is deactivated, so a voided
+// order cannot be cancelled at source and orders/search keeps returning it as
+// OPEN — exactly the reason migration 021 needed a trigger to stop syncs
+// reopening cancelled orders. The dashboard is the authority on whether a sale
+// is real, so its CANCELED state is applied over whatever Square still believes.
+//
+// ⚠️ FAILS OPEN, like every other dashboard read in this file: if Supabase
+// cannot answer, this returns null and voided orders show as live rather than
+// the list failing. That is the safe direction — re-voiding one is harmless
+// (void-order is idempotent), whereas hiding orders we could not verify would
+// hide real work to do. The watchdog is what notices a persistent outage.
+async function fetchCancelledSquareIds() {
+  const rows = await sb('orders?select=square_id&state=eq.CANCELED&square_id=not.is.null');
+  if (!rows) return null;
+  return new Set(rows.map((r) => r.square_id));
+}
+
 // Orders that exist only here. Shaped to match a Square order exactly so the UI
 // never has to care which system a sale came from.
 async function fetchDashboardOnlyOrders(since) {
@@ -146,7 +165,14 @@ async function fetchDashboardOnlyOrders(since) {
   return rows.map((r) => ({
     orderId:          r.order_id,
     orderNumber:      r.order_number || '',
-    status:           r.payment_state === 'PAID' ? 'PAID' : 'AWAITING_ZELLE',
+    // 🔑 order_state is read FIRST so a voided counter sale reads as voided
+    // rather than as whatever it was paid. v_dashboard_only_orders filters
+    // CANCELED out today, so this is inert until that filter is lifted — but
+    // without it, lifting the filter would put voided sales back on the screen
+    // labelled PAID, which is worse than not showing them at all.
+    status:           r.order_state === 'CANCELED'
+                        ? 'CANCELED'
+                        : (r.payment_state === 'PAID' ? 'PAID' : 'AWAITING_ZELLE'),
     createdAt:        r.created_at,
     customerName:     r.customer_name || 'Unknown',
     customerEmail:    r.customer_email || '',
@@ -217,10 +243,11 @@ exports.handler = async (event) => {
 
     // Square, the dashboard's own orders, and fulfillment state — in parallel,
     // since none depends on another.
-    const [orders, dashboardOnly, fulfillmentMap] = await Promise.all([
+    const [orders, dashboardOnly, fulfillmentMap, cancelledIds] = await Promise.all([
       fetchOrders(since),
       fetchDashboardOnlyOrders(since),
       fetchFulfillmentBySquareId(),
+      fetchCancelledSquareIds(),
     ]);
 
     // 🚨 NOT an early return on an empty Square list any more. Counter sales
@@ -287,7 +314,8 @@ exports.handler = async (event) => {
       return {
         orderId:       order.id,
         orderNumber:   order.metadata?.forge_order_number || order.reference_id || '',
-        status:        resolveStatus(order),
+        // A dashboard void wins over anything Square says. See fetchCancelledSquareIds.
+        status:        cancelledIds?.has(order.id) ? 'CANCELED' : resolveStatus(order),
         createdAt:     order.created_at,
         customerName:  name,
         customerEmail: email,
