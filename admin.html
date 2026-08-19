@@ -97,12 +97,52 @@
        on purpose — every other button here is recoverable and this one is not. */
     /* The invoice toolbar. Sticky so Close is reachable from anywhere in a
        long invoice; opaque so the invoice does not show through it. */
+    /* 🔑 An explicit width, even though inset:0 looks like it should be enough.
+       Without a DEFINITE width the modal is shrink-to-fit sized by its own
+       content, so the action row never has a limit to wrap against — measured
+       at 427px inside a 375px phone, which pushed the ✕ off the right edge.
+
+       ⚠️ And it is clamped in VIEWPORT units, not percent. The dashboard behind
+       overflows horizontally on a phone (the order table is wider than a phone
+       screen), and a fixed element resolves 100% against that overflowing width
+       — so `width:100%` alone still measured 427. 100vw is the screen, whatever
+       the page behind is doing. box-sizing is border-box globally, so the 12px
+       side padding is inside that. */
+    #inv-modal { width: 100%; max-width: 100vw; overflow-x: hidden; }
+
     .inv-toolbar {
       position: sticky; top: 0; z-index: 2;
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-      padding: 14px 0; margin-bottom: 14px;
+      padding: 12px 0; margin-bottom: 14px;
       background: #0d0d0d; border-bottom: 1px solid rgba(255,255,255,0.08);
     }
+    .inv-toolbar-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    /* 🔑 EVERYTHING ON THIS ROW SHRINKS EXCEPT THE ✕. A long invoice title or a
+       long email address used to push the close button off the right edge on a
+       phone — the exact dead end this change exists to remove — so both truncate
+       and the ✕ keeps a fixed width it can never lose. */
+    .inv-toolbar-head strong {
+      color: #fff; font-size: 1rem; flex: 0 1 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* The address gives way FIRST. Flex shrinks items in proportion to
+       shrink-factor × base-size, so a big factor here means the email collapses
+       to an ellipsis long before the invoice number does — the number and the
+       total are the two things on this bar worth reading. */
+    .inv-toolbar-head .dim {
+      font-size: .82rem; flex: 1 999 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* On a phone the address is noise competing for the only row that matters. */
+    @media (max-width: 560px) { .inv-toolbar-head .dim { display: none; } }
+    .inv-close {
+      flex: 0 0 34px; margin-left: auto; cursor: pointer;
+      background: rgba(255,255,255,0.06); color: #ddd;
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+      width: 34px; height: 34px; font-size: 1rem; line-height: 1;
+    }
+    .inv-close:hover { background: rgba(255,255,255,0.14); color: #fff; }
+    .inv-toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    @media (max-width: 560px) { .inv-toolbar-actions .btn-sm, .inv-toolbar-actions .btn-primary { flex: 1 1 auto; } }
 
     /* 🖨️ Print the INVOICE, not the dashboard around it. Everything outside the
        modal is hidden, the modal stops being a fixed dark overlay, and the
@@ -824,14 +864,21 @@
          stays pinned to the top of the scroll area for as long as the invoice
          is open. -->
     <div class="inv-toolbar">
-      <strong style="color:#fff;font-size:1rem;" id="inv-modal-title">Invoice</strong>
-      <span class="dim" style="font-size:.82rem;" id="inv-modal-to"></span>
-      <span style="flex:1;"></span>
-      <button class="btn-sm" id="inv-print-btn" onclick="printInvoice()" title="Opens your print dialog — choose 'Save as PDF' there to keep a copy">Print / PDF</button>
-      <button class="btn-sm" id="inv-download-btn" onclick="downloadInvoice()" title="Save the invoice to this device as a file you can open or attach">Download</button>
-      <button class="btn-sm" id="inv-share-btn" onclick="shareInvoice()" title="Send it somewhere else — text, WhatsApp, or copy the details">Share</button>
-      <button class="btn-primary" id="inv-send-btn" onclick="sendInvoice()">Send to customer</button>
-      <button class="btn-sm" onclick="closeInvoice()" title="Close (Esc)">✕ Close</button>
+      <!-- 🔑 The ✕ lives on the title row and is pinned to its right edge, so it
+           is on screen at the same place no matter how the actions below wrap.
+           The old single-row bar pushed Close onto a second line on a narrow
+           screen and off the top entirely once you scrolled. -->
+      <div class="inv-toolbar-head">
+        <strong id="inv-modal-title">Invoice</strong>
+        <span class="dim" id="inv-modal-to"></span>
+        <button class="inv-close" onclick="closeInvoice()" title="Close (Esc)" aria-label="Close invoice">✕</button>
+      </div>
+      <div class="inv-toolbar-actions">
+        <button class="btn-sm" id="inv-print-btn" onclick="printInvoice()" title="Opens your print dialog — choose 'Save as PDF' there to keep a copy">Print / PDF</button>
+        <button class="btn-sm" id="inv-download-btn" onclick="downloadInvoice()" title="Save the invoice to this device as a file you can open or attach">Download</button>
+        <button class="btn-sm" id="inv-share-btn" onclick="shareInvoice()" title="Send it somewhere else — text, WhatsApp, or copy the details">Share</button>
+        <button class="btn-primary" id="inv-send-btn" onclick="sendInvoice()">Send to customer</button>
+      </div>
     </div>
     <div id="inv-modal-warn" class="alert-band" style="display:none;"><p id="inv-modal-warn-body"></p></div>
     <div id="inv-modal-body" style="background:#fff;border-radius:10px;overflow:hidden;"></div>
