@@ -128,4 +128,71 @@ function shortageMessage(shortages) {
     .join('. ') + '.';
 }
 
-module.exports = { stockSource, fetchStock, indexBySiteId, checkAvailability, shortageMessage };
+/**
+ * Products we hold stock of but cannot ship — today, no labels for BPC-157 10mg
+ * or MOTS-C 10mg.
+ *
+ * 🚨 THIS IS NOT GATED ON STOCK_SOURCE, and that is the whole point. The stock
+ * gate above is inert until the cutover, but an unlabelled vial cannot ship
+ * regardless of which system we believe about quantities. Selling it would mean
+ * taking money for something that physically cannot go out.
+ *
+ * 🔑 It also cannot be expressed with is_hidden: v_inventory_dashboard FILTERS
+ * hidden variants, so a hidden product reaches the stock map as "unknown", and
+ * unknown fails OPEN. MOTS-C was already hidden and would have sold anyway.
+ * v_unfulfillable ignores is_hidden deliberately.
+ */
+async function fetchBlocked() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/v_unfulfillable?select=site_catalog_id,reason&site_catalog_id=not.is.null`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    // An EMPTY list is a real answer here — "nothing is blocked" — unlike the
+    // stock map, where empty means the query went wrong.
+    return Object.fromEntries(rows.map((r) => [r.site_catalog_id, r.reason || 'not available']));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Refuse a basket containing anything we cannot ship.
+ *
+ * ⚠️ Fails OPEN if the list cannot be fetched, consistent with the rest of this
+ * file: a reporting outage must not take the whole shop down. That is a
+ * deliberate, narrow risk — the belt-and-braces is to also mark the product sold
+ * out in Square while it is unshippable.
+ */
+async function checkFulfillable(items) {
+  const blocked = await fetchBlocked();
+  if (!blocked) return { ok: true, checked: false, reason: 'blocklist unavailable' };
+  const hits = (items || [])
+    .filter((i) => blocked[i.id])
+    .map((i) => ({ id: i.id, name: i.name, reason: blocked[i.id] }));
+  return hits.length ? { ok: false, checked: true, blocked: hits } : { ok: true, checked: true };
+}
+
+function blockedMessage(hits) {
+  return hits.map((h) => `${h.name} is temporarily unavailable`).join('. ') + '.';
+}
+
+module.exports = {
+  stockSource, fetchStock, indexBySiteId, checkAvailability, shortageMessage,
+  fetchBlocked, checkFulfillable, blockedMessage,
+};

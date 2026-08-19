@@ -26,7 +26,7 @@
 const { syncOrder, rpc } = require('./_order-sync');
 const { consentText, CURRENT_VERSION } = require('./_sms-consent');
 const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
-const { checkAvailability, shortageMessage } = require('./_stock');
+const { checkAvailability, shortageMessage, checkFulfillable, blockedMessage } = require('./_stock');
 const { nameToId } = require('./_catalog-map');
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
@@ -474,6 +474,17 @@ exports.handler = async (event) => {
     const availability = await checkAvailability(cleanItems);
     if (!availability.ok) {
       throw new ValidationError(shortageMessage(availability.shortages));
+    }
+
+    // Separate from the stock gate above, and NOT gated on STOCK_SOURCE: some
+    // products we hold stock of still cannot ship — today, no labels for BPC-157
+    // 10mg or MOTS-C 10mg. Quantity is not the question; the vial physically
+    // cannot go out. Checked here for the same reason as the stock gate: before
+    // the order exists, so the customer gets a 400 they can act on rather than a
+    // stranded order.
+    const shippable = await checkFulfillable(cleanItems);
+    if (!shippable.ok) {
+      throw new ValidationError(blockedMessage(shippable.blocked));
     }
 
     const orderNum   = orderNumber();

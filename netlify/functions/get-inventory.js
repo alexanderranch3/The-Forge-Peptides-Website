@@ -15,7 +15,7 @@
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const { nameToId } = require('./_catalog-map');
-const { stockSource, fetchStock } = require('./_stock');
+const { stockSource, fetchStock, fetchBlocked } = require('./_stock');
 
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
 
@@ -96,6 +96,11 @@ exports.handler = async () => {
     // never paint a sold-out sign over stock you actually have — a false
     // "sold out" is a lost sale nobody ever hears about.
     let source = 'square';
+    // Anything we cannot ship reads sold-out on the page, whatever the counts
+    // say and whichever system is the source. Applied AFTER the stock pass below
+    // so a real quantity can never talk it back into stock.
+    const blocked = await fetchBlocked();
+
     if (stockSource() === 'dashboard') {
       const stock = await fetchStock();
       if (stock) {
@@ -105,6 +110,18 @@ exports.handler = async () => {
           result[id].onHand  = entry.on_hand;
           result[id].soldOut = entry.on_hand <= 0;
         }
+      }
+    }
+
+    // Applied LAST, on purpose: a real quantity must never talk an unshippable
+    // product back into stock. `unavailable` is separate from `soldOut` so the
+    // page can word it honestly — "temporarily unavailable" is true, "sold out"
+    // is not when the vials are sitting on the shelf.
+    if (blocked) {
+      for (const [id, reason] of Object.entries(blocked)) {
+        if (!result[id]) continue;
+        result[id].soldOut = true;
+        result[id].unavailable = reason;
       }
     }
 
