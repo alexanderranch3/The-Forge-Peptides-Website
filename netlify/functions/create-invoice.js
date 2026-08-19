@@ -591,3 +591,17 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
+
+// ── Exported for the watchdog ────────────────────────────────────────────────
+// 🔑 CATALOG is the server-side source of truth for what a customer is CHARGED.
+// The watchdog compares it against the prices the storefront actually DISPLAYS
+// in production, which is the drift that matters: the page shows $155, the
+// invoice says $160, and the customer finds out at checkout. check-prices.js
+// makes the same comparison against the files in the build; this makes it
+// against the running site. Exporting the constant is what stops the watchdog
+// from keeping its own copy of the price list — a fourth place for prices to
+// live would defeat the check it is performing.
+//
+// Adding a named export alongside `handler` does not change how Netlify invokes
+// this function; it only looks for `handler`.
+exports.CATALOG = CATALOG;

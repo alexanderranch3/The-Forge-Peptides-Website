@@ -47,7 +47,16 @@ ok('email is normalised to lowercase', a.verifySession(token).email, 'buyer@exam
 
 console.log('\n— 🚨 forgery —');
 const [body, mac] = token.split('.');
-ok('a flipped MAC is rejected', a.verifySession(`${body}.${mac.slice(0, -1)}A`), null);
+// ⚠️ The replacement must be derived from the character it replaces. This read
+// `${mac.slice(0, -1)}A`, which leaves the token IDENTICAL whenever the MAC
+// already ends in 'A' — about 1 base64url character in 64. The payload carries
+// an expiry so the MAC differs every run, and the suite failed roughly twice in
+// 25 with a forged token that was never actually forged. A flaky assertion here
+// is worse than none: it is the forgery check, and the habit it teaches is to
+// re-run until it passes.
+const flippedMac = mac.slice(0, -1) + (mac.slice(-1) === 'A' ? 'B' : 'A');
+okTrue('the flip really changed the MAC', flippedMac !== mac);
+ok('a flipped MAC is rejected', a.verifySession(`${body}.${flippedMac}`), null);
 ok('an empty MAC is rejected', a.verifySession(`${body}.`), null);
 ok('no MAC at all is rejected', a.verifySession(body), null);
 ok('extra segments are rejected', a.verifySession(`${body}.${mac}.${mac}`), null);

@@ -120,6 +120,22 @@
     .alert-band p  { color: #bbb; font-size: 0.86rem; line-height: 1.6; }
     .alert-band b  { color: #fff; }
 
+    /* Watchdog severities. The colour tracks summary.worst_severity and nothing
+       else, so the band cannot look calmer than the worst thing in it. Red is
+       kept for "we are selling something we do not have" and for the watchdog
+       being unable to see; orange for stock we are hiding; amber for the books. */
+    .alert-band.wd-warning     { border-color: #fd7e14; border-left-color: #fd7e14; }
+    .alert-band.wd-warning h3  { color: #fd7e14; }
+    .alert-band.wd-advisory    { border-color: #ffc107; border-left-color: #ffc107; }
+    .alert-band.wd-advisory h3 { color: #ffc107; }
+    .wd-list { list-style: none; margin: 10px 0 0; padding: 0; }
+    .wd-list li { color: #bbb; font-size: 0.84rem; line-height: 1.55;
+      padding: 7px 0 7px 14px; margin-bottom: 4px; border-left: 2px solid rgba(255,255,255,0.09); }
+    .wd-list li b { color: #fff; }
+    .wd-list .wd-probe { color: #777; font-size: 0.7rem; letter-spacing: 0.07em;
+      text-transform: uppercase; display: block; margin-bottom: 2px; }
+    .wd-list .wd-fix { color: #6c757d; font-size: 0.78rem; display: block; margin-top: 2px; }
+
     .stat-card.warn  { border-color: rgba(255,193,7,.4); }
     .stat-card.warn  .value { color: #ffc107; }
     .stat-card.alert { border-color: rgba(220,53,69,.5); }
@@ -263,6 +279,19 @@
   </div>
 
   <div id="panel-orders">
+    <!-- The store watchdog. Shown ONLY when it has something to say, or when
+         the scheduled run has gone quiet — a standing green banner is noise,
+         and noise is how a real finding gets scrolled past. -->
+    <div class="alert-band" id="watch-band" style="display:none;">
+      <h3 id="watch-title"></h3>
+      <p id="watch-body"></p>
+      <ul class="wd-list" id="watch-list"></ul>
+      <div style="margin-top:12px;">
+        <button class="btn-sm" id="watch-btn" onclick="checkWatchdog(true)">Re-check now</button>
+        <span class="dim" style="font-size:.78rem;margin-left:8px;" id="watch-note"></span>
+      </div>
+    </div>
+
     <!-- Dashboard freshness. Shown only when the database is behind the till,
          because a green "all good" banner nobody reads is just noise. -->
     <div class="alert-band" id="sync-band" style="display:none;">
@@ -839,6 +868,7 @@ async function loadOrders() {
     // Surfaced on the orders screen because that is where a stale dashboard
     // does the most damage — every figure below is derived from these orders.
     checkSyncStatus();
+    checkWatchdog();
     renderTable();
     document.getElementById('last-updated').textContent =
       'Last updated: ' + new Date().toLocaleTimeString();
@@ -1788,6 +1818,118 @@ async function postAdjustment() {
     showToast(err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ── The store watchdog ───────────────────────────────────────────────────────
+// Since the STOCK_SOURCE=dashboard cutover, this database decides what the
+// storefront sells. Two failure shapes are now customer-facing: selling what we
+// do not have, and hiding what we do. The second is the expensive one — nobody
+// ever complains about a purchase they quietly did not make.
+//
+// 🔑 THIS RUNS THE PROBES LIVE. get-watchdog.js does not serve the last stored
+// result, on purpose: if the six-hourly schedule stops firing (the account hit
+// a Netlify credit cap on 2026-08-18), a banner reading a stored run would show
+// a confident green over a store nobody has looked at in a week. Instead the
+// probes run now, and the age of the last SCHEDULED run is reported separately
+// so a dead schedule announces itself.
+//
+// ⚠️ Never blocks the page. A watchdog that can take the dashboard down with it
+// is a liability, not a safeguard.
+const WATCH_MAX_ITEMS = 12;   // enough to act on; a wall of text gets skimmed
+
+// Titles say what KIND of thing is wrong. A bare count ("4 findings") makes
+// Frank open the list to learn whether it matters.
+function watchTitle(probes, summary) {
+  const failing = probes.filter(p => !p.ok);
+  if (failing.some(p => p.family === 'infra' || !p.answered))
+    return 'The watchdog cannot see part of the store';
+  if (summary.worst_severity === 'critical')
+    return 'The storefront may be selling something we do not have';
+  if (summary.worst_severity === 'warning')
+    return 'The storefront may be hiding something we do have';
+  return 'Something in the books needs a look';
+}
+
+async function checkWatchdog(manual = false) {
+  const btn = document.getElementById('watch-btn');
+  if (manual) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const res = await fetch('/.netlify/functions/get-watchdog', {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (!res.ok) return;                       // 401 is handled by loadOrders
+    const data = await res.json();
+    const band = document.getElementById('watch-band');
+    const failing = (data.probes || []).filter(p => !p.ok);
+    const sched = data.scheduled_run || {};
+
+    // The schedule going quiet is its own finding, worth showing even when the
+    // store itself is clean — that is the whole "who watches the watchman" bit.
+    // Two missed runs at a six-hourly cadence is the threshold.
+    const schedQuiet = sched.known === false
+      || (sched.known && sched.at && sched.age_hours > 12);
+    const schedNever = sched.known === true && !sched.at;
+
+    if (!failing.length && !schedQuiet && !schedNever) {
+      band.style.display = 'none';
+      if (manual) showToast('Watchdog: nothing wrong with the store.');
+      return;
+    }
+
+    band.style.display = 'block';
+    band.className = 'alert-band'
+      + (failing.length && data.summary.worst_severity !== 'critical'
+          ? ' wd-' + data.summary.worst_severity : '');
+
+    document.getElementById('watch-title').textContent = failing.length
+      ? watchTitle(data.probes, data.summary)
+      : 'The scheduled watchdog has gone quiet';
+
+    const checked = new Date(data.checked_at).toLocaleTimeString();
+    document.getElementById('watch-body').innerHTML = failing.length
+      ? `Checked against the live store at <b>${esc(checked)}</b> — `
+        + `<b>${data.summary.findings}</b> finding${data.summary.findings === 1 ? '' : 's'} `
+        + `across ${failing.length} check${failing.length === 1 ? '' : 's'}.`
+      : `The store itself checks out clean as of <b>${esc(checked)}</b>. `
+        + `It is the six-hourly background run that has not reported.`;
+
+    // Flatten to one line per finding, worst family first, so the thing that
+    // costs money is never below the thing that is merely untidy.
+    const order = { infra: 0, sells: 1, hides: 2, books: 3 };
+    const rows = [];
+    for (const p of failing.sort((a, b) => order[a.family] - order[b.family])) {
+      if (!p.answered) {
+        rows.push({ probe: p.probe, what: `Could not answer: ${p.unanswered_reason}`, fix: null });
+        continue;
+      }
+      for (const f of p.findings) {
+        const who = f.product || f.order_no || f.site_catalog_id || '';
+        rows.push({ probe: p.probe, who, what: f.what, fix: f.fix || null });
+      }
+    }
+
+    const shown = rows.slice(0, WATCH_MAX_ITEMS);
+    document.getElementById('watch-list').innerHTML = shown.map(r =>
+      `<li><span class="wd-probe">${esc(r.probe.replace(/_/g, ' '))}</span>`
+      + (r.who ? `<b>${esc(r.who)}</b> — ` : '')
+      + `${esc(r.what)}`
+      + (r.fix ? `<span class="wd-fix">${esc(r.fix)}</span>` : '')
+      + `</li>`).join('')
+      + (rows.length > shown.length
+          ? `<li class="dim">…and ${rows.length - shown.length} more.</li>` : '');
+
+    // 🚨 State the limits of the alert channel plainly. Promising a watch that
+    // is not happening is the same mistake as a monitor that fails silently.
+    const note = schedNever ? 'The scheduled run has never reported yet.'
+      : sched.known === false ? 'Could not tell when the scheduled run last reported.'
+      : schedQuiet ? `⚠️ The scheduled run last reported ${sched.age_hours}h ago — it runs every 6h.`
+      : `Scheduled run last reported ${sched.age_hours}h ago. Alerts appear here only; there is no SMS yet.`;
+    document.getElementById('watch-note').textContent = note;
+  } catch {
+    /* The watchdog must never be the reason the dashboard fails to load. */
+  } finally {
+    if (manual) { btn.disabled = false; btn.textContent = 'Re-check now'; }
   }
 }
 

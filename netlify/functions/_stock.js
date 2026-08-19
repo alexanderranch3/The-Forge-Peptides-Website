@@ -35,6 +35,19 @@ function stockSource() {
 }
 
 /**
+ * The name a dashboard row is matched under.
+ *
+ * 🔑 Extracted 2026-08-19 so the watchdog can ask "would this row name-match?"
+ * using the SAME string checkout builds. Re-deriving it there would be the
+ * _catalog-map.js mistake again: two copies that agree today and disagree the
+ * moment either changes, with the divergence invisible until a product sells
+ * as the wrong thing.
+ */
+function variantDisplayName(r) {
+  return [r.product_name, r.variant_name].filter(Boolean).join(' ');
+}
+
+/**
  * Map every dashboard variant onto a site catalog id.
  *
  * `site_catalog_id` wins outright — that is the explicit, editable pin, and when
@@ -46,7 +59,7 @@ function stockSource() {
 function indexBySiteId(rows) {
   const bySite = {};
   for (const r of rows || []) {
-    const name = [r.product_name, r.variant_name].filter(Boolean).join(' ');
+    const name = variantDisplayName(r);
     const id = r.site_catalog_id || nameToId(name);
     if (!id) continue;
     if (!bySite[id]) bySite[id] = { on_hand: 0, variants: [] };
@@ -193,6 +206,6 @@ function blockedMessage(hits) {
 }
 
 module.exports = {
-  stockSource, fetchStock, indexBySiteId, checkAvailability, shortageMessage,
+  stockSource, fetchStock, indexBySiteId, variantDisplayName, checkAvailability, shortageMessage,
   fetchBlocked, checkFulfillable, blockedMessage,
 };

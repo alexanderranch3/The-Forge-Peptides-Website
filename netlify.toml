@@ -5,3 +5,16 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# ── The store watchdog ───────────────────────────────────────────────────────
+# Every six hours: frequent enough that a best seller reading sold out is caught
+# the same day, rare enough to cost nothing. Tighten it if it earns it.
+#
+# 🔑 Declared here rather than with the @netlify/functions `schedule()` wrapper
+# on purpose — this repo has no package.json and no dependencies to install, and
+# a monitor should not be the thing that introduces a build step.
+#
+# ⚠️ A scheduled function is not reachable over HTTP. /admin.html reads
+# get-watchdog.js instead, which runs the same probes live.
+[functions."watchdog"]
+  schedule = "0 */6 * * *"
