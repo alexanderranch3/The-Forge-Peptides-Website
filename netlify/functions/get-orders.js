@@ -105,6 +105,71 @@ async function fetchCustomers(customerIds) {
   return map;
 }
 
+// ── The dashboard side ───────────────────────────────────────────────────────
+// 🚨 This function reads SQUARE. Since order entry shipped, real sales are
+// rung up here and never reach Square at all — FP-001158, a $275.00 Zelle sale,
+// was invisible in the only screen anyone opens. And fulfillment state (packaged
+// / collected) lives only in this database. Both are fetched and merged below.
+//
+// Both are non-fatal: if Supabase cannot answer, the Square orders still render.
+// A dashboard outage must not blank the order list.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+async function sb(path) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : null;
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
+// square_id -> fulfillment state, for orders that came from Square.
+async function fetchFulfillmentBySquareId() {
+  const rows = await sb('v_order_fulfillment?select=square_id,fulfillment_state,carrier,tracking_number&square_id=not.is.null');
+  if (!rows) return null;
+  return Object.fromEntries(rows.map((r) => [r.square_id, r]));
+}
+
+// Orders that exist only here. Shaped to match a Square order exactly so the UI
+// never has to care which system a sale came from.
+async function fetchDashboardOnlyOrders(since) {
+  const rows = await sb(`v_dashboard_only_orders?select=*&created_at=gte.${since.toISOString()}`);
+  if (!rows) return [];
+  return rows.map((r) => ({
+    orderId:          r.order_id,
+    orderNumber:      r.order_number || '',
+    status:           r.payment_state === 'PAID' ? 'PAID' : 'AWAITING_ZELLE',
+    createdAt:        r.created_at,
+    customerName:     r.customer_name || 'Unknown',
+    customerEmail:    r.customer_email || '',
+    customerPhone:    r.customer_phone || '',
+    customerNote:     r.customer_note || '',
+    promoCode:        null,
+    fulfillmentType:  'LOCAL_PICKUP',
+    channel:          r.channel === 'POS' ? 'POS' : 'WEB',
+    shipTo:           null,
+    items:            Array.isArray(r.items) ? r.items : [],
+    subtotal:         Number(r.subtotal || 0),
+    shippingAmount:   Number(r.shipping_amount || 0),
+    shippingLabel:    null,
+    discount:         0,
+    taxAmount:        Number(r.tax_amount || 0),
+    total:            Number(r.total || 0),
+    fulfillmentState: r.fulfillment_state || 'PROPOSED',
+    // Flags an order Square has no record of, so the UI can say so plainly
+    // rather than leaving Frank wondering why it is missing from Square.
+    dashboardOnly:    true,
+  }));
+}
+
 // Paid state resolution, most trustworthy signal first:
 //   1. metadata.payment_status — written at checkout, flipped by set-order-status
 //   2. a recorded tender on the order — covers pre-2026-08-13 invoice-paid orders
@@ -150,9 +215,19 @@ exports.handler = async (event) => {
     const days  = parseInt(event.queryStringParameters?.days || '60', 10);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const orders = await fetchOrders(since);
+    // Square, the dashboard's own orders, and fulfillment state — in parallel,
+    // since none depends on another.
+    const [orders, dashboardOnly, fulfillmentMap] = await Promise.all([
+      fetchOrders(since),
+      fetchDashboardOnlyOrders(since),
+      fetchFulfillmentBySquareId(),
+    ]);
+
+    // 🚨 NOT an early return on an empty Square list any more. Counter sales
+    // live only in the dashboard, so "Square returned nothing" does not mean
+    // "there are no orders" — that assumption is what hid FP-001158.
     if (!orders.length) {
-      return { statusCode: 200, headers, body: JSON.stringify({ orders: [] }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ orders: dashboardOnly }) };
     }
 
     const customersMap = await fetchCustomers(orders.map(o => o.customer_id));
@@ -221,6 +296,9 @@ exports.handler = async (event) => {
         promoCode:     order.metadata?.promo_code || null,
         fulfillmentType,
         channel: orderChannel(order),
+        fulfillmentState: fulfillmentMap?.[order.id]?.fulfillment_state || 'PROPOSED',
+        trackingNumber:   fulfillmentMap?.[order.id]?.tracking_number || null,
+        dashboardOnly: false,
         shipTo,
         items,
         subtotal:       parseFloat(subtotal.toFixed(2)),
@@ -232,10 +310,15 @@ exports.handler = async (event) => {
       };
     });
 
+    // Newest first, across both sources, so a counter sale and a web order sit
+    // in one chronological list rather than two.
+    const merged = [...result, ...dashboardOnly]
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ orders: result }),
+      body: JSON.stringify({ orders: merged }),
     };
 
   } catch (err) {

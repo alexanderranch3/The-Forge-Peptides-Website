@@ -300,6 +300,12 @@
       <option value="PAID">Paid — Ready to Ship</option>
       <option value="PARTIALLY_PAID">Partially Paid</option>
     </select>
+    <select class="filter-select" id="progress-filter" onchange="renderTable()">
+      <option value="OPEN">Needs Action (hide completed)</option>
+      <option value="ALL">All Orders</option>
+      <option value="PREPARED">Ready to Collect / Ship</option>
+      <option value="COMPLETED">Completed</option>
+    </select>
     <select class="filter-select" id="fulfillment-filter" onchange="renderTable()">
       <option value="ALL">All Fulfillments</option>
       <option value="SHIP">Ship Only</option>
@@ -857,6 +863,13 @@ function renderTable() {
   else if (statusF !== 'ALL') orders = orders.filter(o => o.status === statusF);
   if (fulfillF !== 'ALL') orders = orders.filter(o => o.fulfillmentType === fulfillF);
 
+  // Progress through packing and handover, which is separate from payment.
+  // "Needs Action" is the default because an order list that never empties is
+  // one nobody reads — the completed ones have nothing left to do.
+  const progressF = document.getElementById('progress-filter')?.value || 'OPEN';
+  if (progressF === 'OPEN')      orders = orders.filter(o => (o.fulfillmentState || 'PROPOSED') !== 'COMPLETED');
+  else if (progressF !== 'ALL')  orders = orders.filter(o => (o.fulfillmentState || 'PROPOSED') === progressF);
+
   document.getElementById('table-loading').style.display = 'none';
   document.getElementById('select-all').checked = false;
 
@@ -910,6 +923,19 @@ function renderTable() {
           // are listed now, and labelled so a walk-in is never mistaken for an
           // unshipped web order.
           order.channel === 'POS' ? '<div class="fulfillment" style="color:#888">🏪 In person</div>' : ''
+        }${
+          // Where it is in packing/handover. Deliberately quiet for PROPOSED —
+          // "not started" is the normal case and does not need a badge.
+          order.fulfillmentState === 'COMPLETED'
+            ? '<div class="fulfillment" style="color:#28a745;font-weight:700">✓ Completed</div>'
+            : order.fulfillmentState === 'PREPARED'
+              ? '<div class="fulfillment" style="color:#FF6A00;font-weight:700">📦 Ready</div>'
+              : ''
+        }${
+          // 🚨 This order exists ONLY in the dashboard — Square has no record of
+          // it. Said plainly so nobody goes looking for it there and concludes
+          // something is broken.
+          order.dashboardOnly ? '<div class="fulfillment" style="color:#666">not in Square</div>' : ''
         }</td>
         <td>${addr}</td>
         <td>
@@ -938,12 +964,54 @@ function renderTable() {
             ${order.shipTo ? `
               <button class="btn btn-sm btn-copy" onclick="copyAddress('${esc(addrOneLiner)}')">Copy Addr</button>
             ` : ''}
+            ${(order.fulfillmentState || 'PROPOSED') === 'PROPOSED'
+              ? `<button class="btn btn-sm btn-copy" onclick="setFulfillment('${esc(order.orderId)}','PREPARED')" title="Packaged and ready to collect or ship">Mark Ready</button>`
+              : ''}
+            ${order.fulfillmentState === 'PREPARED'
+              ? `<button class="btn btn-sm btn-green" onclick="setFulfillment('${esc(order.orderId)}','COMPLETED')" title="${order.fulfillmentType === 'SHIP' ? 'Shipped out' : 'Picked up'} — closes this order">${order.fulfillmentType === 'SHIP' ? 'Mark Shipped' : 'Mark Picked Up'}</button>`
+              : ''}
+            ${order.fulfillmentState === 'COMPLETED'
+              ? `<button class="btn btn-sm btn-copy" onclick="setFulfillment('${esc(order.orderId)}','PREPARED')" title="Undo — this order is not finished after all">Reopen</button>`
+              : ''}
             <button class="btn btn-sm btn-copy" onclick="showInvoice('${esc(order.orderId)}')" title="Preview the invoice, then send it">Invoice</button>
             <button class="btn btn-sm btn-copy" onclick="copyText('${esc(order.customerEmail)}')">Copy Email</button>
           </div>
         </td>
       </tr>`;
   }).join('');
+}
+
+// ── Packing and handover ──────────────────────────────────────────────────────
+// PROPOSED -> PREPARED (packaged) -> COMPLETED (picked up / shipped).
+// Separate from payment on purpose: an order can be paid and not yet packed, or
+// packed and not yet collected, and conflating the two is what left every paid
+// order sitting in this list forever.
+//
+// 🔑 Writes only to the dashboard. Square is deactivated and being replaced.
+// 🔑 Sends orderNumber for dashboard-native orders — Square has no id for them.
+async function setFulfillment(orderId, state) {
+  const order = allOrders.find(o => o.orderId === orderId);
+  if (!order) return;
+  const previous = order.fulfillmentState || 'PROPOSED';
+  order.fulfillmentState = state;      // optimistic, rolled back below on failure
+  renderTable();
+  try {
+    const body = order.dashboardOnly
+      ? { orderNumber: order.orderNumber, state }
+      : { orderId, state };
+    const res = await fetch('/.netlify/functions/set-fulfillment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+      body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || 'Could not update');
+    showToast(state === 'COMPLETED' ? 'Order closed out' : state === 'PREPARED' ? 'Marked ready' : 'Reopened');
+  } catch (err) {
+    order.fulfillmentState = previous;
+    renderTable();
+    showToast('Failed: ' + err.message);
+  }
 }
 
 // ── Mark Paid ─────────────────────────────────────────────────────────────────
