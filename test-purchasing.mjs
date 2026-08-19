@@ -292,6 +292,27 @@ console.log('\n11. labeling as its own cost layer');
   await post({ ...base, label_cost_cents: 29 });
   sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
   ok('an explicit rate is forwarded', sent.label_cost_cents, 29);
+
+  // COA / QA fees follow the same omit-vs-zero rule, for a sharper reason: the
+  // PO editor in an older deploy does not send this key at all, and a $75
+  // invoice line must not vanish because someone fixed a typo in the notes.
+  calls = [];
+  await post({ ...base });
+  sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  okTrue('omitting QA fees leaves the stored value alone', !('qa_fees_cents' in sent));
+  calls = [];
+  await post({ ...base, qa_fees_cents: 0 });
+  sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  ok('an explicit zero clears them', sent.qa_fees_cents, 0);
+  calls = [];
+  await post({ ...base, qa_fees_cents: 7500, qa_fees_note: '3 x $25 COA' });
+  sent = calls.find(c => c.url.includes('rpc/save_purchase_order')).body.p;
+  ok('a COA fee is forwarded', sent.qa_fees_cents, 7500);
+  ok('with its note', sent.qa_fees_note, '3 x $25 COA');
+  ok('rejects a fractional cent QA fee',
+    (await post({ ...base, qa_fees_cents: 12.5 })).statusCode, 400);
+  ok('rejects a negative QA fee',
+    (await post({ ...base, qa_fees_cents: -1 })).statusCode, 400);
 }
 
 console.log('\n12. unknown action');

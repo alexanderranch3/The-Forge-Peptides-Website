@@ -119,6 +119,8 @@ exports.handler = async (event) => {
       other_fees_cents: int(o.other_fees_cents),
       other_fees_note: o.other_fees_note,
       tax_cents: int(o.tax_cents),
+      qa_fees_cents: int(o.qa_fees_cents),
+      qa_fees_note: o.qa_fees_note,
       label_cost_cents: int(o.label_cost_cents),
       label_provider_id: o.label_provider_id,
       label_provider_name: o.label_provider_name,

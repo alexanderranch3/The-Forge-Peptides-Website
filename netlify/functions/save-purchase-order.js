@@ -203,6 +203,16 @@ function buildPayload(input) {
   if (input.label_cost_cents !== null && input.label_cost_cents !== undefined && input.label_cost_cents !== '') {
     payload.label_cost_cents = asCents(input.label_cost_cents, 'label cost');
   }
+  // QA/COA testing billed on the supplier invoice — counted in the invoice
+  // total, never in a vial's cost. Same omit-means-keep rule as the label rate:
+  // a client that has never heard of this field must not be able to erase a
+  // real invoice line just by saving an unrelated edit.
+  if (input.qa_fees_cents !== null && input.qa_fees_cents !== undefined && input.qa_fees_cents !== '') {
+    payload.qa_fees_cents = asCents(input.qa_fees_cents, 'QA/COA fees');
+  }
+  if (input.qa_fees_note !== null && input.qa_fees_note !== undefined) {
+    payload.qa_fees_note = text(input.qa_fees_note, 200);
+  }
   return payload;
 }
 

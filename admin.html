@@ -95,6 +95,31 @@
 
     /* Void is the one destructive action on this screen. It reads as dangerous
        on purpose — every other button here is recoverable and this one is not. */
+    /* The invoice toolbar. Sticky so Close is reachable from anywhere in a
+       long invoice; opaque so the invoice does not show through it. */
+    .inv-toolbar {
+      position: sticky; top: 0; z-index: 2;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      padding: 14px 0; margin-bottom: 14px;
+      background: #0d0d0d; border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* 🖨️ Print the INVOICE, not the dashboard around it. Everything outside the
+       modal is hidden, the modal stops being a fixed dark overlay, and the
+       toolbar itself is dropped — a printed invoice with a Close button on it
+       is not something you hand a customer. */
+    @media print {
+      body.printing-invoice > *:not(#inv-modal) { display: none !important; }
+      body.printing-invoice #inv-modal {
+        position: static !important; inset: auto !important; overflow: visible !important;
+        background: #fff !important; padding: 0 !important; display: block !important;
+      }
+      body.printing-invoice #inv-modal > div { max-width: none !important; }
+      body.printing-invoice .inv-toolbar,
+      body.printing-invoice #inv-modal-warn { display: none !important; }
+      body.printing-invoice #inv-modal-body { border-radius: 0 !important; }
+    }
+
     .btn-void { background: rgba(220,53,69,0.12); color: #dc3545; border: 1px solid rgba(220,53,69,0.35); }
     .btn-void:hover { background: rgba(220,53,69,0.22); }
     tr.voided td { opacity: 0.55; }
@@ -512,6 +537,11 @@
         <div class="field"><label>Supplier tax $</label>
           <input id="po-tax" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()">
           <div class="hint">Recorded, but excluded from COGS — tax paid to a supplier isn't a product cost.</div></div>
+        <div class="field"><label>COA / QA fees $</label>
+          <input id="po-qa" class="num-in" type="text" inputmode="decimal" placeholder="0.00" oninput="renderLines()">
+          <div class="hint">Lab testing billed on this invoice (Direct: $25 per SKU tested). Counted in the invoice total, excluded from COGS — it is bought per order, not per vial, and it is already an expense in the books.</div></div>
+        <div class="field"><label>COA / QA note</label>
+          <input id="po-qa-note" placeholder="3 x $25 — Reta 10/15/30mg" oninput="markDirty()"></div>
         <div class="field"><label>Fee allocation</label>
           <select id="po-allocation" onchange="renderLines()">
             <option value="PER_UNIT">Per unit (default)</option>
@@ -786,14 +816,22 @@
 </div>
 
 <!-- ── Invoice preview ── -->
-<div id="inv-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;overflow-y:auto;padding:24px 12px;">
+<div id="inv-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;overflow-y:auto;padding:0 12px 24px;" onclick="if (event.target === this) closeInvoice();">
   <div style="max-width:700px;margin:0 auto;">
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+    <!-- 🔑 STICKY. This bar used to scroll away with the invoice, and an invoice
+         is a full page tall — so once you scrolled down to read it there was no
+         Close button anywhere on screen and no way out but a page reload. It now
+         stays pinned to the top of the scroll area for as long as the invoice
+         is open. -->
+    <div class="inv-toolbar">
       <strong style="color:#fff;font-size:1rem;" id="inv-modal-title">Invoice</strong>
       <span class="dim" style="font-size:.82rem;" id="inv-modal-to"></span>
       <span style="flex:1;"></span>
+      <button class="btn-sm" id="inv-print-btn" onclick="printInvoice()" title="Opens your print dialog — choose 'Save as PDF' there to keep a copy">Print / PDF</button>
+      <button class="btn-sm" id="inv-download-btn" onclick="downloadInvoice()" title="Save the invoice to this device as a file you can open or attach">Download</button>
+      <button class="btn-sm" id="inv-share-btn" onclick="shareInvoice()" title="Send it somewhere else — text, WhatsApp, or copy the details">Share</button>
       <button class="btn-primary" id="inv-send-btn" onclick="sendInvoice()">Send to customer</button>
-      <button class="btn-sm" onclick="closeInvoice()">Close</button>
+      <button class="btn-sm" onclick="closeInvoice()" title="Close (Esc)">✕ Close</button>
     </div>
     <div id="inv-modal-warn" class="alert-band" style="display:none;"><p id="inv-modal-warn-body"></p></div>
     <div id="inv-modal-body" style="background:#fff;border-radius:10px;overflow:hidden;"></div>
@@ -2082,20 +2120,38 @@ async function runSync() {
 // was deactivated. Always previewed before it can be sent — an invoice is a
 // document a customer keeps, and sending is not undoable.
 let invoiceOrderId = null;
+let invoiceData = null;   // the loaded invoice: html, number, total, to, paid
+
+// Every action that needs the invoice itself is disabled until it has actually
+// loaded — a Download button that saves the word "Building invoice…" is worse
+// than one that is greyed out for a second.
+function invoiceActionsEnabled(on) {
+  for (const id of ['inv-print-btn', 'inv-download-btn', 'inv-share-btn']) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  }
+}
 
 async function showInvoice(orderId) {
   invoiceOrderId = orderId;
+  invoiceData = null;
+  invoiceActionsEnabled(false);
   const modal = document.getElementById('inv-modal');
   document.getElementById('inv-modal-body').innerHTML =
     '<div style="padding:60px;text-align:center;color:#888;">Building invoice…</div>';
   document.getElementById('inv-modal-warn').style.display = 'none';
   modal.style.display = 'block';
+  // The page behind must not scroll while a full-screen invoice is open —
+  // scrolling the wrong thing is half of why this modal felt like a trap.
+  document.body.style.overflow = 'hidden';
   try {
     const res = await fetch(`/.netlify/functions/send-invoice?order_id=${encodeURIComponent(orderId)}`, {
       headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
     });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Could not build the invoice');
+    invoiceData = d;
+    invoiceActionsEnabled(true);
     document.getElementById('inv-modal-body').innerHTML = d.html;
     document.getElementById('inv-modal-title').textContent = `Invoice ${d.number} — ${d.total}`;
     document.getElementById('inv-modal-to').textContent = d.to ? `to ${d.to}` : 'no email on file';
@@ -2118,7 +2174,110 @@ async function showInvoice(orderId) {
 
 function closeInvoice() {
   document.getElementById('inv-modal').style.display = 'none';
+  document.body.style.overflow = '';
+  document.body.classList.remove('printing-invoice');
   invoiceOrderId = null;
+  invoiceData = null;
+}
+
+// Esc closes it, the way every other dialog on a computer does. Cheap, and it
+// is the first thing anyone tries when a modal has swallowed the screen.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('inv-modal')?.style.display === 'block') closeInvoice();
+});
+
+// ── Getting the invoice out of the dashboard ─────────────────────────────────
+// The preview used to be a dead end: no way to keep a copy, no way to send it
+// anywhere except the one email button. These three are the ways out.
+//
+// 🔑 The invoice HTML from send-invoice is a FRAGMENT built for an email body,
+// so it is wrapped in a minimal document before being printed, saved or shared.
+// Handing someone a bare <div> as a .html file mostly works and is exactly the
+// kind of mostly that breaks on somebody else's phone.
+function invoiceDocument() {
+  return '<!doctype html><html><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + `<title>Invoice ${esc(invoiceData.number)} — The Forge Peptides</title></head>`
+    + `<body style="margin:0;background:#f4f4f5;">${invoiceData.html}</body></html>`;
+}
+
+function invoiceFilename(ext) {
+  return `Invoice-${String(invoiceData.number || 'forge').replace(/[^\w.-]+/g, '-')}.${ext}`;
+}
+
+// Short enough to text. Frank's customers pay by Zelle off the order number, so
+// the number and the total are the two things that actually have to travel.
+function invoiceShareText() {
+  const order = allOrders.find(o => o.orderId === invoiceOrderId);
+  const lines = [`Invoice ${invoiceData.number} — The Forge Peptides`];
+  for (const i of order?.items || []) lines.push(`  ${i.qty}× ${i.name}`);
+  lines.push(`Total: ${invoiceData.total}`);
+  if (!invoiceData.paid) lines.push(`Please use ${invoiceData.number} as the payment memo.`);
+  return lines.join('\n');
+}
+
+// 🖨️ No popup window: a new tab is the first thing a phone blocks, and it loses
+// the invoice's styles. The print stylesheet hides the dashboard instead, so
+// what prints is the invoice and nothing else.
+function printInvoice() {
+  if (!invoiceData) return;
+  const done = () => document.body.classList.remove('printing-invoice');
+  document.body.classList.add('printing-invoice');
+  window.addEventListener('afterprint', done, { once: true });
+  try {
+    window.print();
+  } finally {
+    // print() blocks until the dialog closes in desktop browsers, so by here it
+    // is already safe to undo. afterprint covers the ones where it does not.
+    done();
+  }
+}
+
+function downloadInvoice() {
+  if (!invoiceData) return;
+  const blob = new Blob([invoiceDocument()], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = invoiceFilename('html');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Freed on the next tick rather than immediately: revoking it synchronously
+  // can beat the browser to actually reading the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`Saved ${invoiceFilename('html')}`);
+}
+
+// Tries the real share sheet first, then a text share, then the clipboard.
+// ⚠️ Every step is a genuine fallback, not a guess: sharing a FILE is only
+// supported on some phones, and a Share button that silently does nothing on a
+// desktop is exactly the dead end this whole change is fixing.
+async function shareInvoice() {
+  if (!invoiceData) return;
+  const text = invoiceShareText();
+  try {
+    const file = new File([invoiceDocument()], invoiceFilename('html'), { type: 'text/html' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Invoice ${invoiceData.number}` });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: `Invoice ${invoiceData.number}`, text });
+      return;
+    }
+  } catch (err) {
+    // The user closing the share sheet is not a failure and must not then go on
+    // to quietly rewrite their clipboard.
+    if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Invoice details copied — paste them into a text or email');
+  } catch {
+    showToast('Could not share here — use Download or Print / PDF instead');
+  }
 }
 
 async function sendInvoice() {
@@ -2425,7 +2584,7 @@ function renderPOList() {
   const orders = purData.orders || [];
   document.getElementById('pur-po-none').style.display = orders.length ? 'none' : 'block';
   document.getElementById('pur-po-body').innerHTML = orders.map(o => {
-    const fees = (o.shipping_cents || 0) + (o.other_fees_cents || 0) + (o.tax_cents || 0);
+    const fees = (o.shipping_cents || 0) + (o.other_fees_cents || 0) + (o.tax_cents || 0) + (o.qa_fees_cents || 0);
     const received = o.state === 'RECEIVED';
     return `<tr>
       <td>${o.ordered_on || '<span class="dim">—</span>'}</td>
@@ -2455,6 +2614,7 @@ function newPO() {
     id: null, vendor_id: (purData.vendors[0] || {}).id || '', reference: '', state: 'DRAFT',
     ordered_on: new Date().toISOString().slice(0, 10),
     shipping_cents: 0, other_fees_cents: 0, other_fees_note: '', tax_cents: 0,
+    qa_fees_cents: 0, qa_fees_note: '',
     // Seeded from the active label provider, so the common case needs no thought.
     label_cost_cents: activeLabelRate(),
     allocation: 'PER_UNIT', payment_method: '', notes: '', lines: [],
@@ -2497,6 +2657,8 @@ function openEditor(title) {
   document.getElementById('po-other').value       = centsToInput(editing.other_fees_cents);
   document.getElementById('po-other-note').value  = editing.other_fees_note || '';
   document.getElementById('po-tax').value         = centsToInput(editing.tax_cents);
+  document.getElementById('po-qa').value          = centsToInput(editing.qa_fees_cents);
+  document.getElementById('po-qa-note').value     = editing.qa_fees_note || '';
   document.getElementById('po-label').value       = centsToInput(editing.label_cost_cents);
   document.getElementById('po-allocation').value  = editing.allocation || 'PER_UNIT';
   document.getElementById('po-notes').value       = editing.notes || '';
@@ -2549,6 +2711,8 @@ function syncEditorFromForm() {
   editing.other_fees_cents = dollarsToCents(document.getElementById('po-other').value);
   editing.other_fees_note  = document.getElementById('po-other-note').value;
   editing.tax_cents        = dollarsToCents(document.getElementById('po-tax').value);
+  editing.qa_fees_cents    = dollarsToCents(document.getElementById('po-qa').value);
+  editing.qa_fees_note     = document.getElementById('po-qa-note').value;
   editing.label_cost_cents = dollarsToCents(document.getElementById('po-label').value);
   editing.allocation       = document.getElementById('po-allocation').value;
   editing.notes            = document.getElementById('po-notes').value;
@@ -2669,8 +2833,12 @@ function renderLines() {
   const labelTotal = calc.reduce((n, c) => n + c.labelTotal, 0);
   // Two different totals on purpose: what the SUPPLIER billed (which must tie
   // to the paper invoice) and what the stock actually cost (which includes
-  // labels bought elsewhere, and excludes supplier tax — not a product cost).
-  const invoiceTotal = goods + feePool + (editing.tax_cents || 0);
+  // labels bought elsewhere, and excludes supplier tax and COA fees — neither
+  // is a product cost).
+  // 🔑 QA fees are added HERE and never to feePool. feePool is what gets spread
+  // across vials; a COA is bought per SKU tested, so spreading it would charge
+  // untested products for testing they never had.
+  const invoiceTotal = goods + feePool + (editing.tax_cents || 0) + (editing.qa_fees_cents || 0);
   const trueCost     = goods + feePool + labelTotal;
   document.getElementById('po-lines-foot').innerHTML = `<tr>
     <td colspan="3" style="color:#888;">${editing.lines.length} line(s) · ${units} vials</td>
@@ -2680,12 +2848,12 @@ function renderLines() {
     <td class="num"><strong>${money2(goods)}</strong></td>
     <td class="num">${feePool ? money2(feePool) : '—'}</td>
     <td class="num">${labelTotal ? money2(labelTotal) : '—'}</td>
-    <td class="num" title="What the supplier billed: goods + shipping + fees + tax. Labels are bought separately and excluded here.">
+    <td class="num" title="What the supplier billed: goods + shipping + fees + tax + COA/QA fees. Labels are bought separately and excluded here.">
       <strong>${money2(invoiceTotal)}</strong> invoice</td>
     <td></td>
   </tr>
   <tr>
-    <td colspan="8" style="color:#888;">True cost of this stock — supplier goods and fees plus labels, excluding supplier tax</td>
+    <td colspan="8" style="color:#888;">True cost of this stock — supplier goods and fees plus labels, excluding supplier tax and COA/QA fees</td>
     <td class="num landed-cell"><strong>${money2(trueCost)}</strong></td>
     <td></td>
   </tr>`;
@@ -2749,6 +2917,7 @@ async function savePO() {
       state: editing.state, ordered_on: editing.ordered_on,
       shipping_cents: editing.shipping_cents, other_fees_cents: editing.other_fees_cents,
       other_fees_note: editing.other_fees_note, tax_cents: editing.tax_cents,
+      qa_fees_cents: editing.qa_fees_cents, qa_fees_note: editing.qa_fees_note,
       label_cost_cents: editing.label_cost_cents,
       allocation: editing.allocation, payment_method: editing.payment_method, notes: editing.notes,
       lines: editing.lines.map(l => ({
