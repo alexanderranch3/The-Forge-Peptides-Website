@@ -2,7 +2,14 @@
 // Netlify Function: create-order.js
 // Added 2026-08-17 — ring up an in-person sale here instead of opening Square.
 //
-//   POST { client_uid, purpose, payment_state, customer, lines, ... }
+//   POST { client_uid, purpose, payment_state, party_id, customer, lines, ... }
+//
+// 🔑 party_id WINS OVER customer{}. create_manual_order only falls back to
+// matching on email when party_id is null, and inserts a new party when that
+// finds nothing. Since most counter customers pay by Zelle and have no email,
+// that fallback was giving a returning buyer a NEW party row every sale — and
+// reorder cadence is per party, so each duplicate silently reset it. The picker
+// in admin.html sends the real id; customer{} stays for genuinely new people.
 //
 // This is the piece that actually removes work. The website has recorded its own
 // orders since Square was deactivated; a sale at the door still meant walking to
@@ -120,6 +127,15 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown channel' }) };
     }
 
+    // An existing customer picked from the dropdown. Optional — a genuinely new
+    // customer still arrives as customer{} — but if one is sent it must be a real
+    // uuid. Rejecting a malformed id here beats handing it to Postgres to cast
+    // and fail with something nobody standing at a counter can act on.
+    const partyId = input.party_id ? String(input.party_id) : null;
+    if (partyId && !UUID.test(partyId)) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'That customer selection is not valid — pick again' }) };
+    }
+
     const lines = Array.isArray(input.lines) ? input.lines : [];
     if (!lines.length) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Add at least one product' }) };
@@ -157,6 +173,10 @@ exports.handler = async (event) => {
         tax_cents: cents(input.tax_cents, 'Tax'),
         shipping_cents: cents(input.shipping_cents, 'Shipping'),
         note: text(input.note, 2000),
+        // Set when an existing customer was picked. create_manual_order only
+        // falls back to email-matching (and then to inserting a new party) when
+        // this is null, so sending it is what keeps a returning buyer on one row.
+        party_id: partyId,
         customer: {
           name: text(input.customer?.name, 200),
           email: text(input.customer?.email, 200),

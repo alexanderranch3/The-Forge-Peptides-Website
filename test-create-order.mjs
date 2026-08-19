@@ -108,5 +108,47 @@ console.log('\n6. the page generates one id per sale, not per click');
   okTrue('the till warns stock cannot be un-posted', /cannot be deleted/i.test(html));
 }
 
+console.log('\n7. party_id — picking an existing customer, not retyping them');
+{
+  const P = '44444444-4444-4444-4444-444444444444';
+  routes['rpc/create_manual_order'] = { status: 200, body: { order_id: 'o2', order_no: 'FP-000201', created: true, lines: 1, stock_rows: 1, total_cents: 12400 } };
+
+  calls = [];
+  await post({ ...base, party_id: P, customer: { name: null, email: null, phone: null } });
+  const sent = calls.find(c => c.url.includes('rpc/create_manual_order')).body.p;
+  ok('party_id reaches the RPC', sent.party_id, P);
+
+  // 🔑 The whole point: with an id present the DB must not fall back to
+  // email-matching, which is what was inserting a duplicate party per sale.
+  ok('no name is sent alongside it', sent.customer.name, null);
+  ok('no email is sent alongside it', sent.customer.email, null);
+
+  calls = [];
+  await post({ ...base, customer: { name: 'Walk In', email: 'w@example.com', phone: null } });
+  const anon = calls.find(c => c.url.includes('rpc/create_manual_order')).body.p;
+  ok('a new customer still sends party_id null', anon.party_id, null);
+  ok('and their typed details survive', anon.customer.name, 'Walk In');
+
+  ok('a malformed party_id is refused', (await post({ ...base, party_id: 'not-a-uuid' })).statusCode, 400);
+  okTrue('and says what to do about it',
+    /pick again/i.test(body(await post({ ...base, party_id: 'not-a-uuid' })).error));
+}
+
+console.log('\n8. the picker cannot block a sale');
+{
+  const html = readFileSync('./admin.html', 'utf8');
+  const record = html.match(/async function recordSale\(\)[\s\S]*?\n}/)[0];
+  okTrue('recordSale sends the picked id', /party_id:\s*salePartyId/.test(record));
+  okTrue('and suppresses the typed fields when one is picked', /salePartyId\s*\?\s*\{\s*name:\s*null/.test(record));
+
+  const render = html.match(/function renderCustomerOptions\(\)[\s\S]*?\n}/)[0];
+  okTrue('a failed load degrades to the manual fields', /setNewCustomerVisible\(true\)/.test(render));
+  okTrue('and says so rather than showing an empty customer base', /Could not load the customer list/.test(render));
+
+  const open = html.match(/function openSale\(\)[\s\S]*?\n}/)[0];
+  okTrue('opening a sale clears the previous customer', /salePartyId\s*=\s*null/.test(open));
+  okTrue('and refetches so a just-added customer appears', /saleCustomersState\s*=\s*'idle'/.test(open));
+}
+
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);
 process.exit(fail ? 1 : 0);

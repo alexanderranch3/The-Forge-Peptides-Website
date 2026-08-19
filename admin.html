@@ -631,7 +631,18 @@
       <div class="field"><label>Date</label><input id="sale-date" type="date"></div>
     </div>
 
-    <div class="field-grid" style="margin-top:14px;">
+    <!-- Pick a returning customer, or add a new one. Picking sends the real
+         party_id; typing a name into a box could not, and that is what was
+         giving repeat Zelle buyers a fresh customer record every sale. -->
+    <div class="field" style="margin-top:14px;">
+      <label>Customer</label>
+      <input id="sale-customer-filter" placeholder="Type to narrow the list…"
+             oninput="renderCustomerOptions()" style="margin-bottom:8px;" autocomplete="off">
+      <select id="sale-customer" onchange="onCustomerPick()"></select>
+      <div class="hint" id="sale-customer-hint"></div>
+    </div>
+
+    <div class="field-grid" id="sale-new-customer" style="display:none;margin-top:14px;">
       <div class="field"><label>Customer name</label><input id="sale-name" placeholder="optional"></div>
       <div class="field"><label>Email</label><input id="sale-email" placeholder="optional"></div>
       <div class="field"><label>Phone</label><input id="sale-phone" placeholder="optional"></div>
@@ -1327,6 +1338,143 @@ function renderInventory(data) {
 let saleLines = [];
 let saleUid = null;
 
+// ── Customer picker ──────────────────────────────────────────────────────────
+// 🔑 Picking sends a real party_id. create_manual_order only falls back to
+// matching on email — and then to inserting a new party — when that id is null,
+// so a returning Zelle buyer with no email was getting a fresh customer record
+// on every sale, quietly resetting their reorder cadence.
+//
+// 🚨 THE LIST IS NEVER ALLOWED TO BLOCK A SALE. If it fails to load, the picker
+// degrades to the three fields this form always had. A counter screen that
+// cannot take money because a lookup timed out is worse than no picker at all.
+let saleCustomers = [];
+let saleCustomersState = 'idle';   // idle | loading | ok | error
+let salePartyId = null;
+
+async function loadSaleCustomers() {
+  if (saleCustomersState === 'loading' || saleCustomersState === 'ok') return;
+  saleCustomersState = 'loading';
+  renderCustomerOptions();
+  try {
+    const res = await fetch('/.netlify/functions/get-customers', {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Could not load customers');
+    saleCustomers = d.customers || [];
+    saleCustomersState = 'ok';
+  } catch {
+    saleCustomers = [];
+    saleCustomersState = 'error';
+  }
+  renderCustomerOptions();
+}
+
+// Two people really can share a name here — un-merged duplicates exist in the
+// data. Show contact detail ONLY on the names where it is needed to tell them
+// apart, so the common case stays short and scannable.
+function duplicateNames() {
+  const seen = new Map();
+  for (const c of saleCustomers) {
+    const k = (c.name || '').trim().toLowerCase();
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  return seen;
+}
+
+function customerOptionLabel(c, dupes) {
+  let s = c.name || '(no name)';
+  if (c.kind && c.kind !== 'CUSTOMER') s += ` [${c.kind}]`;
+  if ((dupes.get((c.name || '').trim().toLowerCase()) || 0) > 1) {
+    const contact = c.email || c.phone;
+    if (contact) s += ` · ${contact}`;
+  }
+  if (c.order_count) {
+    s += ` · ${c.order_count} order${c.order_count === 1 ? '' : 's'}`;
+    if (c.last_order_at) s += ` · last ${String(c.last_order_at).slice(5, 10)}`;
+  } else {
+    s += ' · no orders yet';
+  }
+  return s;
+}
+
+function renderCustomerOptions() {
+  const sel  = document.getElementById('sale-customer');
+  const hint = document.getElementById('sale-customer-hint');
+  if (!sel) return;
+  const keep = sel.value;
+  const q = (document.getElementById('sale-customer-filter').value || '').trim().toLowerCase();
+
+  sel.innerHTML = '';
+  sel.appendChild(new Option('No customer / walk-in', ''));
+  sel.appendChild(new Option('➕ New customer…', '__new__'));
+
+  if (saleCustomersState === 'loading') {
+    hint.textContent = 'Loading customers…';
+  } else if (saleCustomersState === 'error') {
+    // Degraded, and it says so rather than looking like an empty customer base.
+    hint.textContent = '⚠️ Could not load the customer list — enter the details by hand. The sale still records normally.';
+    setNewCustomerVisible(true);
+    return;
+  }
+
+  const matches = saleCustomers.filter((c) => {
+    if (!q) return true;
+    return [c.name, c.email, c.phone].some((v) => v && String(v).toLowerCase().includes(q));
+  });
+  const dupes = duplicateNames();
+  for (const c of matches) sel.appendChild(new Option(customerOptionLabel(c, dupes), c.party_id));
+
+  // Keep the picked customer selected across a re-filter.
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  else if (keep === '__new__') sel.value = '__new__';
+
+  if (saleCustomersState === 'ok') {
+    hint.textContent = q
+      ? `${matches.length} of ${saleCustomers.length} customers match`
+      : `${saleCustomers.length} customers — most recent buyer first`;
+  }
+  onCustomerPick({ silent: true });
+}
+
+function setNewCustomerVisible(show) {
+  const el = document.getElementById('sale-new-customer');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+function onCustomerPick(opts) {
+  const sel  = document.getElementById('sale-customer');
+  const hint = document.getElementById('sale-customer-hint');
+  const v = sel.value;
+
+  if (v === '__new__') {
+    salePartyId = null;
+    setNewCustomerVisible(true);
+    hint.textContent = 'New customer — they are saved with the sale.';
+    return;
+  }
+
+  setNewCustomerVisible(false);
+  ['sale-name', 'sale-email', 'sale-phone'].forEach((id) => { document.getElementById(id).value = ''; });
+
+  if (!v) {
+    salePartyId = null;
+    if (!opts || !opts.silent) hint.textContent = 'No customer recorded on this sale.';
+    return;
+  }
+
+  salePartyId = v;
+  // Show contact detail on selection — this is the moment to notice you picked
+  // the wrong one of two people with the same name.
+  const c = saleCustomers.find((x) => x.party_id === v);
+  if (c) {
+    const bits = [c.email, c.phone].filter(Boolean);
+    hint.textContent = bits.length
+      ? `${c.name} — ${bits.join(' · ')}`
+      : `${c.name} — no email or phone on file`;
+  }
+}
+
 function openSale() {
   saleLines = [];
   // New id per sale, not per click of Record — a retry of THIS sale must reuse it.
@@ -1336,7 +1484,17 @@ function openSale() {
   document.getElementById('sale-date').value = new Date().toISOString().slice(0, 10);
   ['sale-name','sale-email','sale-phone','sale-note','sale-discount','sale-tax','sale-shipping']
     .forEach(id => { document.getElementById(id).value = ''; });
+  // Reset the picker to "no customer" every time — a name carried over from the
+  // last sale would put this one on the wrong person's record.
+  salePartyId = null;
+  document.getElementById('sale-customer-filter').value = '';
+  setNewCustomerVisible(false);
+  renderCustomerOptions();
   document.getElementById('sale-modal').style.display = 'block';
+  // Fire-and-forget: the list arrives when it arrives, and the form is usable
+  // the whole time. Refetched per open so a customer added last sale is there.
+  saleCustomersState = 'idle';
+  loadSaleCustomers();
   if (!invItems.length) loadInventory().then(() => { addSaleLine(); });
   else addSaleLine();
 }
@@ -1346,6 +1504,7 @@ function closeSale() {
   document.getElementById('sale-modal').style.display = 'none';
   saleLines = [];
   saleUid = null;
+  salePartyId = null;
 }
 
 function addSaleLine() {
@@ -1461,7 +1620,11 @@ async function recordSale() {
         tax_cents: dollarsToCents(document.getElementById('sale-tax').value),
         shipping_cents: dollarsToCents(document.getElementById('sale-shipping').value),
         note: document.getElementById('sale-note').value || null,
-        customer: {
+        // An existing customer resolves by id and nothing else — sending the
+        // typed fields alongside it would invite the two to disagree about who
+        // this is. customer{} is only for someone genuinely new.
+        party_id: salePartyId,
+        customer: salePartyId ? { name: null, email: null, phone: null } : {
           name: document.getElementById('sale-name').value || null,
           email: document.getElementById('sale-email').value || null,
           phone: document.getElementById('sale-phone').value || null,
