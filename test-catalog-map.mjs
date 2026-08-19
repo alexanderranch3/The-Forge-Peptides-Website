@@ -66,5 +66,15 @@ for (const [n, want] of [
   ['Bacteriostatic Water 30ml','reconstitution-liquid-30ml'],
 ]) ok(n, want);
 
+console.log('\n— 🚨 the Semax/Selank combo is neither standalone —');
+// It bit on 2026-08-19: the combo is not pinned by site_catalog_id, so it fell
+// through to includes('semax') and put its 3 vials onto Semax 10mg, which has 0.
+// Square had it correctly sold out; the cutover to dashboard stock made it buyable.
+ok('SEMAX / SELANK (5MG/5MG]', null);
+ok('semax / selank 5mg/5mg', null);
+ok('Selank / Semax blend', null);
+ok('Semax 10mg', 'semax-10mg');
+ok('Selank 10mg', 'selank-10mg');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

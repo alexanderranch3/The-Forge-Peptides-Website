@@ -74,6 +74,16 @@ function nameToId(name) {
   if ((n.includes('ghk-cu') || n.includes('ghk cu')) && n.includes('50'))             return 'ghk-cu-50mg';
   if (n.includes('ghk-cu') || n.includes('ghk cu'))                                   return 'ghk-cu-100mg';
   if (n.includes('ss-31') || n.includes('ss31') || n.includes('elamipretide'))        return 'ss-31-10mg';
+  // 🚨 SEMAX / SELANK is a COMBO product (5mg/5mg) and is NOT either standalone.
+  // Same trap as BPC-157 above, and it bit on 2026-08-19: the combo is not pinned
+  // by site_catalog_id, so it fell through to includes('semax'), collided with the
+  // standalone Semax 10mg, and put the combo's 3 vials onto a product with 0 in
+  // stock. Under Square that id was correctly sold out; the cutover to dashboard
+  // stock made it buyable. Null rather than guess — a null fails open to whatever
+  // the pinned row says, a wrong id sells a vial that does not exist.
+  const semaxSelankCombo = (n.includes('semax') && n.includes('selank'))
+                        || ((n.includes('semax') || n.includes('selank')) && n.includes('/'));
+  if (semaxSelankCombo)                                                                return null;
   if (n.includes('semax'))                                                             return 'semax-10mg';
   if (n.includes('selank'))                                                            return 'selank-10mg';
   if (n.includes('dsip'))                                                              return 'dsip-5mg';
