@@ -63,14 +63,30 @@ async function fetchOrders(since) {
     cursor = data.cursor || null;
   } while (cursor);
 
-  // Keep customer-facing orders only. In-person POS quick-sales have no
-  // fulfillment and no customer attached — those are Frank ringing someone up,
-  // not a web order to pack and ship. Loosen this filter if he wants POS sales
-  // in the dashboard too.
-  return orders.filter(o =>
-    (o.fulfillments && o.fulfillments.length) ||
-    o.metadata?.forge_order_number
-  );
+  // 🚨 NOTHING IS DROPPED HERE ANY MORE. This used to keep only orders with a
+  // fulfillment or a forge order number, on the reasoning that an in-person POS
+  // quick-sale is not a web order to pack and ship. That is true about SHIPPING
+  // and false about everything else: a POS sale is a real sale that moves real
+  // stock, and hiding it made it invisible in the only screen Frank reads.
+  //
+  // It bit us on 2026-08-19: FP-001155 (Retatrutide 10mg, 08-17) deducted a vial
+  // and appeared nowhere in the order list, so reconciling the count against the
+  // dashboard silently disagreed by one vial with no visible cause.
+  //
+  // POS sales have no fulfillment, so they shape as LOCAL_PICKUP, and the
+  // shipping workflow already defaults to fulfillmentType === 'SHIP' — they
+  // cannot pollute a packing run. They are tagged `channel` so the UI can say
+  // plainly where a sale came from.
+  return orders;
+}
+
+// WEB = placed through our checkout (it carries our order number) or given a
+// fulfillment. POS = rung up in person. The distinction drives display only —
+// both are real sales and both move stock.
+function orderChannel(order) {
+  const isWeb = (order.fulfillments && order.fulfillments.length)
+    || !!order.metadata?.forge_order_number;
+  return isWeb ? 'WEB' : 'POS';
 }
 
 // Fetch customers in parallel (Square has no batch customer retrieve)
@@ -204,6 +220,7 @@ exports.handler = async (event) => {
         customerNote:  order.metadata?.customer_note || '',
         promoCode:     order.metadata?.promo_code || null,
         fulfillmentType,
+        channel: orderChannel(order),
         shipTo,
         items,
         subtotal:       parseFloat(subtotal.toFixed(2)),

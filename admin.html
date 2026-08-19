@@ -904,7 +904,13 @@ function renderTable() {
         <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.orderNumber)}</td>
         <td>${badge}${order.fulfillmentType === 'SHIP'
           ? '<div class="fulfillment">🚚 Ship</div>'
-          : '<div class="fulfillment">📦 Pickup</div>'}</td>
+          : '<div class="fulfillment">📦 Pickup</div>'}${
+          // POS sales used to be dropped by get-orders entirely, which is how a
+          // real vial went out with nothing on this screen to show for it. They
+          // are listed now, and labelled so a walk-in is never mistaken for an
+          // unshipped web order.
+          order.channel === 'POS' ? '<div class="fulfillment" style="color:#888">🏪 In person</div>' : ''
+        }</td>
         <td>${addr}</td>
         <td>
           ${order.shipTo ? `
