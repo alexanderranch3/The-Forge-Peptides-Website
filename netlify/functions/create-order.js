@@ -40,6 +40,9 @@ const TIMEOUT_MS = 10000;
 
 const PURPOSES = ['SALE', 'INTERNAL', 'COMP', 'SAMPLE'];
 const PAY_STATES = ['PAID', 'AWAITING_PAYMENT'];
+// How the money arrived. HOUSE_ACCOUNT means it has not: the sale goes on the
+// customer's tab and is settled later through record-payment.js.
+const TENDERS = ['ZELLE', 'CASH', 'CARD', 'BANK_TRANSFER', 'HOUSE_ACCOUNT', 'OTHER'];
 const CHANNELS = ['POS', 'MANUAL'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -118,9 +121,38 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({
         error: 'Say what this order is: a sale, your own use, or a give-away' }) };
     }
-    const paymentState = String(input.payment_state || 'AWAITING_PAYMENT').toUpperCase();
+    let paymentState = String(input.payment_state || 'AWAITING_PAYMENT').toUpperCase();
     if (!PAY_STATES.includes(paymentState)) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown payment state' }) };
+    }
+    const tenderType = String(input.tender_type || 'ZELLE').toUpperCase();
+    if (!TENDERS.includes(tenderType)) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown payment method' }) };
+    }
+
+    // ── Charging a sale to someone's tab ─────────────────────────────────────
+    // 🔑 A house-account sale is PAID. That reads oddly and is right: the sale
+    // is complete and settled against the tab, which is what makes it count as
+    // revenue — Frank's decision, and what the database already did with the
+    // historical house-account tenders. What is still owed lives in
+    // v_house_account_balance, not in the order's payment state. Leaving it
+    // AWAITING_PAYMENT would mean create_manual_order wrote no tender at all,
+    // and a tab with no charge on it is a debt nobody can see.
+    if (tenderType === 'HOUSE_ACCOUNT') {
+      if (purpose !== 'SALE') {
+        return { statusCode: 400, headers, body: JSON.stringify({
+          error: 'Only a sale can go on a house account — your own use and give-aways are not owed to anyone' }) };
+      }
+      // A tab has to belong to someone. create_manual_order will create the
+      // party from customer{} if it is new, and migration 024's trigger attaches
+      // the charge to whoever that turns out to be — but an unnamed walk-in
+      // would open a tab nobody could ever be asked to settle.
+      const named = input.party_id || String(input.customer?.name || '').trim();
+      if (!named) {
+        return { statusCode: 400, headers, body: JSON.stringify({
+          error: 'Pick or name the customer whose house account this goes on' }) };
+      }
+      paymentState = 'PAID';
     }
     const channel = String(input.channel || 'POS').toUpperCase();
     if (!CHANNELS.includes(channel)) {
@@ -167,6 +199,9 @@ exports.handler = async (event) => {
         client_uid: text(input.client_uid, 100),
         purpose,
         payment_state: paymentState,
+        // create_manual_order defaults this to ZELLE; it decides the tender row
+        // it writes for a PAID sale, which is what a house-account charge is.
+        tender_type: tenderType,
         channel,
         placed_at: input.placed_at || null,
         discount_cents: cents(input.discount_cents, 'Discount'),

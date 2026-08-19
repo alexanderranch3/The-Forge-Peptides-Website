@@ -80,13 +80,31 @@ exports.handler = async (event) => {
     };
   }
 
+  // What each customer still owes on their house account.
+  //
+  // 🔑 FAILS SOFT AND SILENTLY, on purpose. v_house_account_balance arrives with
+  // migration 024; until that is applied this returns an empty map and the
+  // picker works exactly as it did before. The customer list is the till's path
+  // to ringing up a sale — it must never stop working because a reporting view
+  // is missing.
+  async function balances() {
+    try {
+      const rows = await sb('v_house_account_balance?select=party_id,balance_cents');
+      return new Map(rows.filter((r) => Number(r.balance_cents) > 0)
+                         .map((r) => [r.party_id, Number(r.balance_cents)]));
+    } catch {
+      return new Map();
+    }
+  }
+
   try {
-    const [parties, orders] = await Promise.all([
+    const [parties, orders, owed] = await Promise.all([
       sb('parties?select=id,display_name,email,phone,kind,notes&merged_into_id=is.null&order=display_name'),
       // ⚠️ Cancelled orders are excluded deliberately. 19 were cancelled on
       // 2026-08-19 as never-real, and counting them would date a customer's
       // "last order" to a sale that never happened.
       sb('orders?select=party_id,placed_at,state&party_id=not.is.null&state=neq.CANCELED'),
+      balances(),
     ]);
 
     // Order count and most recent order date, per party. Done here rather than
@@ -109,6 +127,9 @@ exports.handler = async (event) => {
         kind: p.kind,
         order_count: s.order_count,
         last_order_at: s.last_order_at,
+        // 0 when nothing is owed, and also 0 before migration 024 — the two are
+        // indistinguishable here by design, because both mean "no tab to chase".
+        house_balance_cents: owed.get(p.id) || 0,
       };
     });
 
