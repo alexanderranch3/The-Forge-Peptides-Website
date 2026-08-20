@@ -150,5 +150,74 @@ console.log('\n8. the picker cannot block a sale');
   okTrue('and refetches so a just-added customer appears', /saleCustomersState\s*=\s*'idle'/.test(open));
 }
 
+
+// ── Custom lines (added 2026-08-20) ──────────────────────────────────────────
+// 🔑 FEE is an extra charge and IS revenue; BALANCE_DUE is settling up and is
+// NOT — the product revenue counted on the original order. 🚨 Neither moves
+// stock, and neither carries a variant, which is exactly what the old
+// validation refused.
+console.log('\n— a custom charge on a sale —');
+{
+  routes['rpc/create_manual_order'] = { status: 200, body: {
+    order_id: 'of1', order_no: 'FP-000300', created: true, lines: 2, stock_rows: 1, total_cents: 18500 } };
+  routes['parties?select'] = { status: 200, body: [] };
+  calls = [];
+  let res = await post({
+    client_uid: 'cl-fee', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [
+      { kind: 'PRODUCT', variant_id: V, quantity: 1, unit_price_cents: 16000 },
+      { kind: 'FEE', name: 'Rush handling', quantity: 1, unit_price_cents: 2500 },
+    ],
+  });
+  ok('accepted', res.statusCode, 200);
+  const sent = calls.find(c => c.url.includes('create_manual_order')).body.p;
+  ok('both lines reach the database', sent.lines.length, 2);
+  ok('the fee keeps its kind', sent.lines[1].kind, 'FEE');
+  ok('and its wording',       sent.lines[1].name, 'Rush handling');
+  ok('with no variant',       sent.lines[1].variant_id, null);
+  ok('the product line is still PRODUCT', sent.lines[0].kind, 'PRODUCT');
+
+  calls = [];
+  routes['rpc/create_manual_order'] = { status: 200, body: {
+    order_id: 'ob1', order_no: 'FP-000301', created: true, lines: 1, stock_rows: 0, total_cents: 7000 } };
+  res = await post({
+    client_uid: 'cl-bal', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [{ kind: 'BALANCE_DUE', name: 'Settling July tab', quantity: 1, unit_price_cents: 7000 }],
+  });
+  ok('a balance-only order is accepted', res.statusCode, 200);
+  ok('and keeps its kind',
+    calls.find(c => c.url.includes('create_manual_order')).body.p.lines[0].kind, 'BALANCE_DUE');
+}
+
+console.log('\n— a custom line has to say what it is for —');
+{
+  let res = await post({
+    client_uid: 'cl-noname', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [{ kind: 'FEE', quantity: 1, unit_price_cents: 2500 }],
+  });
+  ok('no description is refused', res.statusCode, 400);
+  okTrue('and says so', /what the charge is for/i.test(body(res).error));
+
+  res = await post({
+    client_uid: 'cl-zero', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [{ kind: 'FEE', name: 'Free thing', quantity: 1, unit_price_cents: 0 }],
+  });
+  ok('a charge of nothing is refused', res.statusCode, 400);
+
+  res = await post({
+    client_uid: 'cl-badkind', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [{ kind: 'SHIPPING', name: 'x', quantity: 1, unit_price_cents: 500 }],
+  });
+  ok('an unsupported kind is refused', res.statusCode, 400);
+
+  // 🚨 The rule that must not have loosened: a PRODUCT line still needs a product.
+  res = await post({
+    client_uid: 'cl-noprod', purpose: 'SALE', payment_state: 'PAID', channel: 'POS',
+    lines: [{ quantity: 1, unit_price_cents: 500 }],
+  });
+  ok('🚨 a product line still needs a product', res.statusCode, 400);
+  okTrue('and says so', /pick a product/i.test(body(res).error));
+}
+
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);
 process.exit(fail ? 1 : 0);

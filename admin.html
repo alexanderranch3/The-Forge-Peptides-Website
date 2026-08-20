@@ -914,7 +914,13 @@
         <tbody id="sale-lines"></tbody>
       </table>
     </div>
-    <div style="margin-top:10px;"><button class="btn-sm" onclick="addSaleLine()">+ Add item</button></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-sm" onclick="addSaleLine()">+ Add item</button>
+      <button class="btn-sm" onclick="addCustomLine('FEE')"
+              title="An extra charge — rush, handling, restocking. Counts as revenue.">+ Extra charge</button>
+      <button class="btn-sm" onclick="addCustomLine('BALANCE_DUE')"
+              title="Settling a balance. Money in, but not revenue — that sale already counted.">+ Settle a balance</button>
+    </div>
 
     <div class="field-grid" style="margin-top:16px;">
       <div class="field"><label>Discount $</label>
@@ -2107,7 +2113,18 @@ function closeSale() {
 }
 
 function addSaleLine() {
-  saleLines.push({ variant_id: '', quantity: 1, unit_price_cents: 0 });
+  saleLines.push({ kind: 'PRODUCT', variant_id: '', quantity: 1, unit_price_cents: 0 });
+  renderSale();
+}
+
+// ── A custom charge on a sale (added 2026-08-20) ─────────────────────────────
+// 🔑 TWO KINDS, ASKED SEPARATELY, because they mean opposite things to the
+// books. FEE is an extra charge and IS revenue. BALANCE_DUE is settling up and
+// is NOT — the product revenue was counted on the original order, so counting it
+// again would double it. Migration 036 enforces that; this just lets Frank say
+// which he means. 🚨 Neither moves stock.
+function addCustomLine(kind) {
+  saleLines.push({ kind, name: '', quantity: 1, unit_price_cents: 0 });
   renderSale();
 }
 
@@ -2126,12 +2143,23 @@ function saleLineChanged(i, field, value) {
     l.quantity = Number.isFinite(n) && n > 0 ? n : 1;
   } else if (field === 'unit_price_cents') {
     l.unit_price_cents = dollarsToCents(value);
+  } else if (field === 'name') {
+    l.name = value;
+  } else if (field === 'kind') {
+    // Switching a charge to a balance, or back. The wording and the revenue
+    // treatment both follow from this one field.
+    l.kind = value;
   }
   renderSale();
 }
 
 function applyFlTax() {
-  const subtotal = saleLines.reduce((n, l) => n + (l.quantity || 0) * (l.unit_price_cents || 0), 0);
+  // The hint beside this button says "on the product subtotal", so it has to be
+  // the product subtotal: a fee and a balance being settled are not taxable
+  // goods, and including them would quietly overcharge the tax.
+  const subtotal = saleLines
+    .filter((l) => !l.kind || l.kind === 'PRODUCT')
+    .reduce((n, l) => n + (l.quantity || 0) * (l.unit_price_cents || 0), 0);
   document.getElementById('sale-tax').value = ((Math.round(subtotal * 0.07)) / 100).toFixed(2);
   renderSale();
 }
@@ -2189,6 +2217,36 @@ function renderSale() {
   document.getElementById('sale-lines').innerHTML = saleLines.map((l, i) => {
     const it = invItems.find(x => x.variant_id === l.variant_id);
     const amount = (l.quantity || 0) * (l.unit_price_cents || 0);
+
+    // ── A custom charge (added 2026-08-20) ───────────────────────────────────
+    // 🔑 It gets a description box, not a product picker, and a dash where the
+    // stock count goes — because it moves no stock, and showing a number there
+    // would suggest it does.
+    if (l.kind && l.kind !== 'PRODUCT') {
+      const isFee = l.kind === 'FEE';
+      return `<tr>
+        <td>
+          <input value="${esc(l.name || '')}" placeholder="${isFee ? 'What is the charge for?' : 'What is being settled?'}"
+                 oninput="saleLineChanged(${i}, 'name', this.value)">
+          <div class="hint" style="margin-top:4px;">
+            ${isFee
+              ? '<b>Extra charge</b> — counts as revenue.'
+              : '<b>Settling a balance</b> — money in, but <b>not</b> revenue: that sale already counted.'}
+            <button class="btn-sm" style="padding:2px 6px;margin-left:6px;"
+                    onclick="saleLineChanged(${i}, 'kind', '${isFee ? 'BALANCE_DUE' : 'FEE'}')">
+              change to ${isFee ? 'a balance' : 'a charge'}</button>
+          </div>
+        </td>
+        <td class="num"><span class="dim" title="A charge moves no stock">—</span></td>
+        <td><input class="num-in" value="${l.quantity}" inputmode="numeric"
+                   oninput="saleLineChanged(${i}, 'quantity', this.value)"></td>
+        <td><input class="num-in" value="${centsToInput(l.unit_price_cents)}" inputmode="decimal"
+                   oninput="saleLineChanged(${i}, 'unit_price_cents', this.value)"></td>
+        <td class="num">${money2(amount)}</td>
+        <td><button class="btn-sm danger" onclick="removeSaleLine(${i})">✕</button></td>
+      </tr>`;
+    }
+
     // Shown, never enforced: at a counter the vial in your hand is the truth and
     // the recorded figure is the thing that is wrong.
     const stock = !it ? '<span class="dim">—</span>'
@@ -2208,8 +2266,14 @@ function renderSale() {
     </tr>`;
   }).join('');
   // Keep the pickers showing what is actually selected after a re-render.
-  saleLines.forEach((l, i) => {
-    const sel = document.querySelectorAll('#sale-lines select')[i];
+  // ⚠️ Indexed over the SELECTS, not over saleLines — a custom line has no
+  // picker, so the two lists stop lining up as soon as one is added and every
+  // product below it would get the wrong product re-applied.
+  const pickers = document.querySelectorAll('#sale-lines select');
+  let pi = 0;
+  saleLines.forEach((l) => {
+    if (l.kind && l.kind !== 'PRODUCT') return;
+    const sel = pickers[pi++];
     if (sel) sel.value = l.variant_id || '';
   });
 
@@ -2218,7 +2282,12 @@ function renderSale() {
   const tax      = dollarsToCents(document.getElementById('sale-tax').value);
   const shipping = dollarsToCents(document.getElementById('sale-shipping').value);
   const total    = subtotal - discount + tax + shipping;
-  const units    = saleLines.reduce((n, l) => n + (l.quantity || 0), 0);
+  // 🔑 VIALS, not lines. A custom charge takes nothing off the shelf, so
+  // counting it here would say "3 vials" for one vial and two fees — and a
+  // count you cannot trust on the till is worse than no count.
+  const units    = saleLines
+    .filter((l) => !l.kind || l.kind === 'PRODUCT')
+    .reduce((n, l) => n + (l.quantity || 0), 0);
 
   const band = document.getElementById('sale-summary');
   if (!units) { band.style.display = 'none'; return; }
@@ -2233,13 +2302,30 @@ function renderSale() {
 }
 
 async function recordSale() {
-  const lines = saleLines.filter(l => l.variant_id);
+  // 🚨 A custom line has NO variant_id, so the old `filter(l => l.variant_id)`
+  // silently dropped every one of them — the charge would vanish between the
+  // screen and the server with no error at all.
+  const isCustom = (l) => l.kind && l.kind !== 'PRODUCT';
+  const lines = saleLines.filter(l => (isCustom(l) ? (l.name || '').trim() : l.variant_id));
   if (!lines.length) { showToast('Add at least one product'); return; }
 
+  const unnamed = saleLines.filter(l => isCustom(l) && !(l.name || '').trim());
+  if (unnamed.length) { showToast('Say what the extra charge is for'); return; }
+  const freeCharge = lines.filter(l => isCustom(l) && !(l.unit_price_cents > 0));
+  if (freeCharge.length) { showToast('A charge needs an amount'); return; }
+
   const purpose = document.getElementById('sale-purpose').value;
-  const units = lines.reduce((n, l) => n + l.quantity, 0);
+  // 🔑 Counted over PRODUCT lines only — a fee takes no vial off the shelf, and
+  // saying it does in the confirmation is how you stop trusting confirmations.
+  const units = lines.filter(l => !isCustom(l)).reduce((n, l) => n + l.quantity, 0);
+  const charges = lines.filter(isCustom);
+  const chargeNote = charges.length
+    ? `\n\nPlus ${charges.length} custom line(s): ` + charges.map(l =>
+        `${l.name} ${money2((l.quantity || 0) * (l.unit_price_cents || 0))}` +
+        (l.kind === 'FEE' ? ' (revenue)' : ' (settling a balance — not revenue)')).join(', ')
+    : '';
   if (!confirm(`Record this ${purpose === 'SALE' ? 'sale' : purpose.toLowerCase()}?\n\n` +
-               `${units} vial(s) will come off the shelf. This cannot be deleted.`)) return;
+               `${units} vial(s) will come off the shelf. This cannot be deleted.` + chargeNote)) return;
 
   const btn = document.getElementById('sale-save');
   btn.disabled = true;
@@ -2277,7 +2363,15 @@ async function recordSale() {
           email: document.getElementById('sale-email').value || null,
           phone: document.getElementById('sale-phone').value || null,
         },
-        lines: lines.map(l => ({ variant_id: l.variant_id, quantity: l.quantity, unit_price_cents: l.unit_price_cents })),
+        // kind and name travel too — without them a custom line arrives looking
+        // like a product with no product, and create-order rejects it.
+        lines: lines.map(l => ({
+          kind: l.kind || 'PRODUCT',
+          variant_id: l.variant_id || null,
+          name: l.name || null,
+          quantity: l.quantity,
+          unit_price_cents: l.unit_price_cents,
+        })),
       }),
     });
     const d = await res.json();

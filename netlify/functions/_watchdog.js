@@ -146,7 +146,12 @@ async function gatherSources() {
     sb('v_inventory_dashboard?select=variant_id,product_name,variant_name,site_catalog_id,on_hand,price_cents,unit_cost_cents,status'),
     sb('v_unfulfillable?select=variant_id,site_catalog_id,product_name,variant_name,reason,on_hand'),
     sb('variants?select=id,name,sku,site_catalog_id,unfulfillable_reason,updated_at&fulfillable=eq.false'),
-    sb('v_product_sales?select=order_no,placed_at,name_at_sale,quantity,line_item_id,revenue_cents&variant_id=is.null'),
+    // 🚨 kind=PRODUCT IS LOAD-BEARING (migration 036). A FEE line has no variant
+    // BY DESIGN — it is an extra charge, not a vial — so without this filter
+    // every fee ever charged would be reported as "took money and deducted no
+    // stock". A monitor that cries wolf is a monitor that gets ignored, which is
+    // the failure this whole file exists to prevent.
+    sb('v_product_sales?select=order_no,placed_at,name_at_sale,quantity,line_item_id,revenue_cents&variant_id=is.null&kind=eq.PRODUCT'),
     sb(`orders?select=id,order_no,purpose,state,payment_state,placed_at,total_cents,tenders(id),order_line_items(id,kind)&state=neq.CANCELED&order=placed_at.desc&limit=${ORDER_LIMIT}`),
     fetchStorefront(),
   ]);

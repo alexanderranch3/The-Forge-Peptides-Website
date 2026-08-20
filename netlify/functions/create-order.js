@@ -264,18 +264,44 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Too many lines' }) };
     }
 
+    // ── Lines: products, and since 2026-08-20 custom charges ─────────────────
+    // 🔑 FEE is an extra charge and IS revenue (rush, handling, restocking).
+    // BALANCE_DUE is settling up and is NOT — the product revenue was already
+    // counted on the original order, and counting it again would double it.
+    // Migration 036 is where that distinction is enforced; this only carries it.
+    // 🚨 Neither moves stock. create_manual_order skips the ledger for them.
+    const CUSTOM_KINDS = ['FEE', 'BALANCE_DUE'];
     const cleanLines = lines.map((l, i) => {
-      if (!UUID.test(String(l.variant_id || ''))) {
-        throw Object.assign(new Error(`Line ${i + 1}: pick a product`), { status: 400 });
-      }
+      const kind = String(l.kind || 'PRODUCT').toUpperCase();
       const qty = Number(l.quantity);
       if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) {
         throw Object.assign(new Error(`Line ${i + 1}: quantity must be between 1 and 1000`), { status: 400 });
       }
+      const unit_price_cents = cents(l.unit_price_cents, `Line ${i + 1} price`);
+
+      if (CUSTOM_KINDS.includes(kind)) {
+        // A product line can fall back to the catalogue name. This cannot, and
+        // an amount with no words beside it is unreadable on an invoice later.
+        const name = text(l.name, 200);
+        if (!name) {
+          throw Object.assign(new Error(`Line ${i + 1}: say what the charge is for`), { status: 400 });
+        }
+        if (unit_price_cents <= 0) {
+          throw Object.assign(new Error(`Line ${i + 1}: a charge needs an amount`), { status: 400 });
+        }
+        return { kind, variant_id: null, quantity: qty, unit_price_cents, name };
+      }
+      if (kind !== 'PRODUCT') {
+        throw Object.assign(new Error(`Line ${i + 1}: a line is a product, a fee, or a balance being settled`), { status: 400 });
+      }
+      if (!UUID.test(String(l.variant_id || ''))) {
+        throw Object.assign(new Error(`Line ${i + 1}: pick a product`), { status: 400 });
+      }
       return {
+        kind: 'PRODUCT',
         variant_id: l.variant_id,
         quantity: qty,
-        unit_price_cents: cents(l.unit_price_cents, `Line ${i + 1} price`),
+        unit_price_cents,
         name: text(l.name, 200),
       };
     });
