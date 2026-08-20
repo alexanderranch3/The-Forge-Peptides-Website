@@ -181,7 +181,12 @@
     .addr-block .email { color: #888; font-size: 0.78rem; }
 
     /* ── Tabs + Inventory (added 2026-08-17) ─────────────────────────────── */
-    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #262626; }
+    /* 🔑 WRAPS. With six tabs the row is wider than a phone, and an unwrapped
+       row does not just clip itself — it makes the whole PAGE overflow
+       sideways, which is what once sized a fixed-position modal to 427px inside
+       a 375px screen. Wrapping costs nothing on a desktop, where they all fit
+       on one line anyway. */
+    .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #262626; }
     .tab {
       background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
       color: #777; font-size: 0.9rem; font-weight: 700; padding: 10px 16px; letter-spacing: .02em;
@@ -328,6 +333,51 @@
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+    /* ── Finance (added 2026-08-20) ──────────────────────────────────────── */
+    .stat-card.good        { border-color: rgba(40,167,69,.35); }
+    .stat-card.good .value { color: #28a745; }
+    .fin-delta      { font-size: .72rem; margin-top: 3px; }
+    .fin-delta.up   { color: #28a745; }
+    .fin-delta.down { color: #dc3545; }
+    .fin-delta.flat { color: #666; }
+
+    /* The trend. Bar LENGTH is the month's revenue against the best month; the
+       green part of it is profit and the dark part is what the vials cost. One
+       bar therefore answers both "how much did we sell" and "how much of it did
+       we keep", which are the two questions and were never separable anyway. */
+    .fin-month { margin-bottom: 15px; }
+    .fin-month-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+      font-size: .85rem; color: #bbb; margin-bottom: 5px; flex-wrap: wrap; }
+    .fin-month-head b { color: #fff; }
+    .fin-track { background: #141414; border: 1px solid #1f1f1f; border-radius: 5px; height: 18px; overflow: hidden; }
+    .fin-bar { height: 100%; background: #7a4415; display: flex; min-width: 3px; }
+    .fin-bar-profit { height: 100%; background: #28a745; }
+    .fin-month-sub { color: #666; font-size: .74rem; margin-top: 4px; }
+    /* An unfinished month is drawn hatched, because a short final bar read as a
+       downturn is the one misreading this chart invites. */
+    .fin-month.partial .fin-track {
+      background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.04) 0 6px, transparent 6px 12px);
+    }
+    .fin-legend { color: #777; font-size: .76rem; display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 16px; }
+    .fin-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+
+    /* The bridge from "revenue" to "money". They are different numbers and the
+       page shows the whole walk between them rather than picking one. */
+    .fin-bridge { width: 100%; font-size: .86rem; }
+    .fin-bridge td { padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
+    .fin-bridge td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: #ddd; }
+    .fin-bridge tr:hover td { background: none; }
+    .fin-bridge tr.total td { border-top: 1px solid rgba(255,106,0,.35); border-bottom: none;
+      color: #fff; font-weight: 700; padding-top: 12px; }
+    .fin-bridge tr.sub td { color: #999; }
+    .fin-bridge tr.sub td:first-child { padding-left: 16px; }
+    .fin-bridge .why { color: #666; font-size: .74rem; display: block; margin-top: 3px; line-height: 1.5; }
+    .fin-bridge .why b { color: #999; }
+
+    .fin-note { color: #777; font-size: .8rem; line-height: 1.65; margin-top: 14px; }
+    .fin-note b { color: #ccc; }
+    .fin-note .flag { color: #ffc107; }
+
     /* Toast */
     #toast {
       position: fixed; bottom: 24px; right: 24px; background: #1a1a1a;
@@ -377,6 +427,7 @@
     <button class="tab"        id="tab-purchasing" onclick="showTab('purchasing')">Purchasing</button>
     <button class="tab"        id="tab-labeling"   onclick="showTab('labeling')">Labeling</button>
     <button class="tab"        id="tab-customers"  onclick="showTab('customers')">Customers</button>
+    <button class="tab"        id="tab-finance"    onclick="showTab('finance')">Finance</button>
   </div>
 
   <div id="panel-orders">
@@ -924,6 +975,105 @@
   <div id="cust-none" style="display:none;padding:26px;color:#888;">Nobody matches that.</div>
 </div>
 
+<!-- ── Finance Tab (added 2026-08-20) ──────────────────────────────────────
+     🔑 Every figure on this tab is READ from v_product_sales via get-finance.js
+     and only added up. Nothing here works out a margin from a price and a cost
+     of its own — the Inventory tab reads the same view, and two screens that
+     each do the maths will eventually disagree about what the business earned.
+     ⚠️ "Revenue" and "money collected" are different numbers. The Money panel
+     walks the whole distance between them rather than the page quietly picking
+     one and calling it both.                                                -->
+<div id="panel-finance" style="display:none;">
+  <div class="controls">
+    <select class="filter-select" id="fin-period" onchange="loadFinance(true)">
+      <option value="all" selected>All time</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="365">Last 12 months</option>
+      <option value="ytd">This year</option>
+    </select>
+    <button class="btn btn-outline" onclick="loadFinance(true)">↺ Refresh</button>
+    <span class="dim" style="font-size:.78rem;" id="fin-asof"></span>
+  </div>
+
+  <div id="fin-loading" class="loading">Loading finance…</div>
+  <div id="fin-error" class="no-orders" style="display:none;"></div>
+
+  <div id="fin-content" style="display:none;">
+    <div class="stats">
+      <div class="stat-card"><div class="label">Revenue</div>
+        <div class="value" id="fin-revenue">—</div>
+        <div class="note" id="fin-revenue-note"></div>
+        <div class="fin-delta" id="fin-revenue-delta"></div></div>
+      <div class="stat-card"><div class="label">Cost of goods</div>
+        <div class="value" id="fin-cogs">—</div>
+        <div class="note" id="fin-cogs-note"></div></div>
+      <div class="stat-card good"><div class="label">Gross profit</div>
+        <div class="value" id="fin-profit">—</div>
+        <div class="note" id="fin-profit-note"></div>
+        <div class="fin-delta" id="fin-profit-delta"></div></div>
+      <div class="stat-card"><div class="label">Orders</div>
+        <div class="value" id="fin-orders">—</div>
+        <div class="note" id="fin-orders-note"></div>
+        <div class="fin-delta" id="fin-orders-delta"></div></div>
+    </div>
+
+    <p class="sub-note" id="fin-compare-note" style="display:none;"></p>
+
+    <div class="alert-band wd-advisory" id="fin-alert" style="display:none;">
+      <h3 id="fin-alert-title"></h3>
+      <p id="fin-alert-body"></p>
+    </div>
+
+    <h2 style="color:#FF6A00;font-size:1.05rem;margin:24px 0 6px;">How sales are moving</h2>
+    <p class="sub-note">Every month since the first sale — <b>not</b> cut to the period above, because a
+      trend cropped to the window cannot show the shape you are asking it about.</p>
+    <div class="fin-legend">
+      <span><span class="fin-swatch" style="background:#28a745;"></span>kept as profit</span>
+      <span><span class="fin-swatch" style="background:#7a4415;"></span>cost of the vials</span>
+      <span>bar length = that month against the best month</span>
+    </div>
+    <div id="fin-months"></div>
+
+    <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">Where the money actually is</h2>
+    <p class="sub-note">Revenue is <b>product lines before sales tax</b>. What people handed over is a
+      different figure — this is the whole walk between them.</p>
+    <div class="panel-card">
+      <table class="fin-bridge"><tbody id="fin-bridge-body"></tbody></table>
+      <div class="fin-note" id="fin-money-note"></div>
+    </div>
+
+    <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">What earns the money</h2>
+    <p class="sub-note">Ordered by profit, not by revenue — the biggest seller and the biggest earner are
+      rarely the same product. <b>Margin is blank</b> wherever any sold unit has no recorded cost.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Product</th><th class="num">Units</th><th class="num">Orders</th>
+          <th class="num">Revenue</th><th class="num">Cost</th>
+          <th class="num">Profit</th><th class="num">Margin</th><th>Last sold</th>
+        </tr></thead>
+        <tbody id="fin-products-body"></tbody>
+      </table>
+    </div>
+    <div id="fin-products-none" class="no-orders" style="display:none;">No sales in this period.</div>
+
+    <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">Where the sales come from</h2>
+    <p class="sub-note">The till, the website and the Square-era import are separate channels.
+      <b>MANUAL</b> is a counter sale rung up here; <b>WEBSITE</b> is a storefront checkout.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Channel</th><th class="num">Orders</th><th class="num">Units</th>
+          <th class="num">Revenue</th><th class="num">Profit</th>
+          <th class="num">Margin</th><th class="num">Avg order</th>
+        </tr></thead>
+        <tbody id="fin-channels-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ── One customer ── -->
 <div id="cust-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9998;overflow-y:auto;padding:0 12px 24px;" onclick="if (event.target === this) closeCustomer();">
   <div style="max-width:820px;margin:0 auto;">
@@ -1279,7 +1429,7 @@ async function voidOrder(orderId, orderNumber, acknowledgePayment = false) {
     showToast(`${d.orderNumber} voided — ${bits.join(', ')}`);
 
     // Everything downstream of orders is now stale: stock moved and revenue moved.
-    invLoaded = false; purLoaded = false;
+    invLoaded = false; purLoaded = false; finLoaded = false;
     window.__voidReason = '';
     loadOrders();
   } catch (err) {
@@ -1472,7 +1622,7 @@ let invLoaded = false;
 
 let purLoaded = false;
 
-const TABS = ['orders', 'inventory', 'purchasing', 'labeling', 'customers'];
+const TABS = ['orders', 'inventory', 'purchasing', 'labeling', 'customers', 'finance'];
 
 function showTab(which) {
   TABS.forEach(t => {
@@ -1486,6 +1636,7 @@ function showTab(which) {
   if ((which === 'purchasing' || which === 'labeling') && !purLoaded) loadPurchasing();
   if (which === 'labeling' && purLoaded) renderLabeling();
   if (which === 'customers') loadCustomersTab();
+  if (which === 'finance' && !finLoaded) loadFinance();
 }
 
 const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -1946,7 +2097,7 @@ async function recordSale() {
     showToast(d.created ? `Recorded ${d.order_no} — ${money2(d.total_cents)}` : (d.message || 'Already recorded'));
     document.getElementById('sale-modal').style.display = 'none';
     saleLines = []; saleUid = null;
-    invLoaded = false;
+    invLoaded = false; finLoaded = false;
     loadOrders();
   } catch (err) {
     showToast(err.message);
@@ -2387,7 +2538,7 @@ async function runSync() {
     if (d.failed?.length) console.error('Sync failures:', d.failed);
     await checkSyncStatus();
     // Anything downstream of orders is now stale in the page.
-    invLoaded = false; purLoaded = false;
+    invLoaded = false; purLoaded = false; finLoaded = false;
     loadOrders();
   } catch (err) {
     showToast('Sync failed: ' + err.message);
@@ -2814,6 +2965,9 @@ async function recordHousePayment(partyId, owedCents) {
       ? `${d.customer}'s house account is settled`
       : `${centsToUsd(d.amount_cents)} recorded — ${centsToUsd(d.balance_cents)} still owed`);
     await loadCustomersTab(true);
+    // What is owed just changed, and the Finance tab reports it. Revenue does
+    // not move — the sale counted when it was charged.
+    finLoaded = false;
     if (custOpenId) openCustomer(custOpenId);
   } catch (err) {
     showToast('Could not record it: ' + err.message);
@@ -3079,6 +3233,7 @@ async function mapSoldLine(i) {
     const r = await purWrite({ action: 'map-sold-line', name: u.name, variant_id: id });
     await loadPurchasing();
     if (invLoaded) { invLoaded = false; loadInventory(); }   // margins just changed
+    finLoaded = false;                                       // and so did profit
     showToast(r.mapped.costed
       ? `Mapped ${r.mapped.lines} line(s) and costed ${r.mapped.costed}`
       : `Mapped ${r.mapped.lines} line(s) — no cost on record for that product yet`);
@@ -3093,6 +3248,7 @@ async function unmapSoldLine(name) {
     const r = await purWrite({ action: 'unmap-sold-line', name });
     await loadPurchasing();
     if (invLoaded) { invLoaded = false; loadInventory(); }
+    finLoaded = false;
     showToast(`${r.restored} line(s) put back`);
   } catch (err) {
     showToast('Could not undo: ' + err.message);
@@ -3522,6 +3678,232 @@ async function renameVendor(id) {
   } catch (err) {
     showToast('Could not rename: ' + err.message);
   }
+}
+
+// ─── Finance tab (added 2026-08-20) ─────────────────────────────────────────
+// 🔑 This code FORMATS. It does not add money up. Every figure below arrives
+// from get-finance.js, which reads them out of v_product_sales and only sums
+// them — so this screen and the Inventory tab's margins can never drift apart.
+// If a total here looks wrong, the view is the one place to fix it.
+//
+// ⚠️ The two words this tab is careful about:
+//   "Revenue"   — what the products sold for, before sales tax.
+//   "Collected" — what people actually handed over, which includes tax and
+//                 shipping, excludes anything charged to a house account, and
+//                 is therefore never the same number.
+let finLoaded = false;
+let finData   = null;
+
+async function loadFinance(force = false) {
+  const loading = document.getElementById('fin-loading');
+  const errEl   = document.getElementById('fin-error');
+  const content = document.getElementById('fin-content');
+  if (finLoaded && !force) return;
+
+  loading.style.display = 'block';
+  errEl.style.display   = 'none';
+  if (!finLoaded) content.style.display = 'none';
+
+  const period = document.getElementById('fin-period').value;
+  try {
+    const res = await fetch('/.netlify/functions/get-finance?period=' + encodeURIComponent(period), {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (res.status === 401) { showLogin(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(' — '));
+    finData = data;
+    renderFinance(data);
+    finLoaded = true;
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch (err) {
+    loading.style.display = 'none';
+    // 🚨 The content is HIDDEN on failure, never left showing the last good
+    // figures under a fresh date. Stale money that looks current is worse than
+    // no money on screen.
+    content.style.display = 'none';
+    errEl.textContent   = 'Could not load finance: ' + err.message;
+    errEl.style.display = 'block';
+  }
+}
+
+function finDelta(id, pct, sinceLabel) {
+  const el = document.getElementById(id);
+  if (pct === null || pct === undefined) { el.className = 'fin-delta'; el.textContent = ''; return; }
+  const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+  el.className = 'fin-delta ' + dir;
+  el.textContent = `${pct > 0 ? '▲' : pct < 0 ? '▼' : '▪'} ${Math.abs(pct).toFixed(1)}% vs ${sinceLabel}`;
+}
+
+const finPct = v => (v === null || v === undefined) ? '<span class="dim">—</span>' : v.toFixed(1) + '%';
+// Product and variant names overlap constantly here — the product is
+// "Retatrutide 10mg" and its variant is "10mg", which would print the size
+// twice. The variant is shown only when it actually adds something.
+const finName = (p) => {
+  if (!p.product) return '<span class="dim">Unnamed variant</span>';
+  const v = (p.variant || '').trim();
+  const redundant = !v || p.product.toLowerCase().includes(v.toLowerCase());
+  return esc(redundant ? p.product : `${p.product} · ${v}`);
+};
+
+function renderFinance(d) {
+  const t = d.totals, c = d.cash;
+
+  document.getElementById('fin-asof').textContent =
+    d.window.from ? `${d.window.label} — ${d.window.from} to ${d.window.to}` : `All time — through ${d.window.to}`;
+
+  document.getElementById('fin-revenue').textContent = money2(t.revenue_cents);
+  document.getElementById('fin-revenue-note').textContent = `${t.units} vials, before sales tax`;
+  document.getElementById('fin-cogs').textContent = money2(t.cogs_cents);
+  document.getElementById('fin-cogs-note').textContent = 'landed cost of what sold';
+  document.getElementById('fin-profit').textContent = money2(t.profit_cents);
+  document.getElementById('fin-profit-note').textContent =
+    t.margin_pct === null ? 'margin unavailable — see below' : `${t.margin_pct.toFixed(1)}% margin`;
+  document.getElementById('fin-orders').textContent = t.orders;
+  document.getElementById('fin-orders-note').textContent = `${money2(t.avg_order_cents)} average`;
+
+  // 🔑 The comparison is the answer to "how are sales moving", so it is a like
+  // for like window of the SAME LENGTH immediately before — not last month,
+  // which would compare 20 days against 31 and call the shortfall a decline.
+  const cmp = d.comparison;
+  const since = cmp ? `${cmp.from} – ${cmp.to}` : '';
+  finDelta('fin-revenue-delta', cmp ? cmp.revenue_change_pct : null, since);
+  finDelta('fin-profit-delta',  cmp ? cmp.profit_change_pct  : null, since);
+  finDelta('fin-orders-delta',  cmp ? cmp.orders_change_pct  : null, since);
+
+  // 🚨 Why there are no arrows. A window reaching back past the first sale
+  // produces enormous, meaningless growth figures — this says so in words
+  // instead, because a silently missing comparison looks like a bug.
+  const cmpNote = document.getElementById('fin-compare-note');
+  if (cmp && cmp.partial_baseline) {
+    cmpNote.innerHTML = `No like-for-like comparison: the matching window before this one runs back to
+      <b>${esc(cmp.from)}</b>, and the first sale on record is <b>${esc(cmp.first_sale)}</b> — so most of that
+      baseline is time the business did not exist. It took <b>${money2(cmp.revenue_cents)}</b> across
+      <b>${cmp.orders}</b> order${cmp.orders === 1 ? '' : 's'}, which is a starting line, not a trend.`;
+    cmpNote.style.display = 'block';
+  } else {
+    cmpNote.style.display = 'none';
+  }
+
+  // ── Anything that makes the figures above less than trustworthy ───────────
+  const band = document.getElementById('fin-alert');
+  const title = document.getElementById('fin-alert-title');
+  const body  = document.getElementById('fin-alert-body');
+  if (c.unreconciled_cents !== 0) {
+    // Red, and first: the till and the books disagree.
+    band.className = 'alert-band';
+    title.textContent = 'The tenders do not add up to the orders';
+    body.innerHTML = `Orders in this period total <b>${money2(c.order_total_cents)}</b> but their tenders ` +
+      `come to <b>${money2(c.tender_total_cents)}</b> — a gap of <b>${money2(Math.abs(c.unreconciled_cents))}</b>. ` +
+      `Every figure on this tab is drawn from the same order set, so this is a real disagreement, not rounding.`;
+    band.style.display = 'block';
+  } else if (t.lines_missing_cost > 0) {
+    band.className = 'alert-band wd-advisory';
+    title.textContent = 'Some profit figures are incomplete';
+    body.innerHTML = `<b>${t.lines_missing_cost}</b> sold line${t.lines_missing_cost === 1 ? ' has' : 's have'} ` +
+      `no recorded cost, so ${t.lines_missing_cost === 1 ? 'its' : 'their'} revenue is counted but the profit is ` +
+      `not. Margin is left blank rather than shown too high. Fix it by giving those products a cost on the ` +
+      `<b>Purchasing</b> tab.`;
+    band.style.display = 'block';
+  } else {
+    band.style.display = 'none';
+  }
+
+  // ── The trend ─────────────────────────────────────────────────────────────
+  const months = d.months || [];
+  const maxRev = Math.max(1, ...months.map(m => m.revenue_cents));
+  document.getElementById('fin-months').innerHTML = months.length ? months.map(m => {
+    const w  = Math.max(1, (m.revenue_cents / maxRev) * 100);
+    // Clamped at zero: a loss-making month shows no green rather than a bar
+    // drawn backwards off its own track.
+    const pw = m.revenue_cents > 0 ? Math.min(100, Math.max(0, (m.profit_cents / m.revenue_cents) * 100)) : 0;
+    return `<div class="fin-month${m.partial ? ' partial' : ''}">
+      <div class="fin-month-head">
+        <span><b>${esc(m.label)}</b>${m.partial ? ' <span class="dim">· still running</span>' : ''}</span>
+        <span>${money2(m.revenue_cents)} &nbsp;·&nbsp; kept <b>${money2(m.profit_cents)}</b>
+          ${m.margin_pct === null ? '' : `<span class="dim">(${m.margin_pct.toFixed(1)}%)</span>`}</span>
+      </div>
+      <div class="fin-track"><div class="fin-bar" style="width:${w.toFixed(2)}%">
+        <div class="fin-bar-profit" style="width:${pw.toFixed(2)}%"></div></div></div>
+      <div class="fin-month-sub">${m.orders} order${m.orders === 1 ? '' : 's'} · ${m.units} vials
+        ${m.lines_missing_cost ? ` · <span class="warn-cell">${m.lines_missing_cost} line(s) with no cost</span>` : ''}</div>
+    </div>`;
+  }).join('') : '<div class="no-orders">No sales yet.</div>';
+
+  // ── The bridge from revenue to money ──────────────────────────────────────
+  const tenderList = (c.tenders || [])
+    .filter(x => x.type !== 'HOUSE_ACCOUNT')
+    .map(x => `${esc(x.type.replace(/_/g, ' ').toLowerCase())} ${money2(x.amount_cents)}`)
+    .join(' · ');
+
+  const rows = [
+    [`Product revenue<span class="why">What the vials sold for, after any discount on the line and
+        <b>before</b> sales tax. This is the Revenue tile above.</span>`, money2(t.revenue_cents), ''],
+    [`Sales tax<span class="why">Collected on the sale and owed onward — never yours, and never in revenue.</span>`,
+      money2(t.tax_cents), ''],
+    [`Shipping, balance-due lines, less order discounts<span class="why">Everything on an order that is not a
+        product line, minus any discount applied to the order as a whole rather than to its lines.</span>`,
+      money2(c.other_lines_cents), ''],
+    [`Orders totalled<span class="why">${c.tendered_orders} closed order${c.tendered_orders === 1 ? '' : 's'}
+        in this period.</span>`, money2(c.order_total_cents), 'total'],
+    [`Collected${tenderList ? `<span class="why">${tenderList}</span>` : ''}`, money2(c.settled_cents), 'sub'],
+    [`Charged to a house account<span class="why">A tab closes the order and counts as revenue when charged —
+        but nobody has paid yet, so it is not money in hand.</span>`, money2(c.house_charged_cents), 'sub'],
+  ];
+  document.getElementById('fin-bridge-body').innerHTML = rows
+    .map(([label, amt, cls]) => `<tr class="${cls}"><td>${label}</td><td class="num">${amt}</td></tr>`).join('');
+
+  // 🚨 Money that is deliberately NOT in the figures above is STATED. An
+  // untendered order is silently excluded from v_product_sales, and that exact
+  // silence is how six paid Square orders once went missing from revenue.
+  const notes = [];
+  if (c.awaiting.orders) {
+    notes.push(`<span class="flag">⏳</span> <b>${money2(c.awaiting.amount_cents)}</b> on
+      ${c.awaiting.orders} order${c.awaiting.orders === 1 ? '' : 's'} awaiting payment
+      (${c.awaiting.order_nos.map(esc).join(', ')}) — <b>not</b> counted in revenue until a payment is recorded.`);
+  }
+  if (d.house_accounts.owed_cents) {
+    notes.push(`<span class="flag">🧾</span> <b>${money2(d.house_accounts.owed_cents)}</b> still owed across
+      ${d.house_accounts.people} house account${d.house_accounts.people === 1 ? '' : 's'}
+      (${d.house_accounts.rows.slice(0, 4).map(r => esc(r.name)).join(', ')}) — already in revenue, not yet in hand.
+      Record payoffs on the <b>Customers</b> tab.`);
+  }
+  if (c.voided.orders) {
+    notes.push(`<span class="dim">🗑️</span> ${c.voided.orders} voided order${c.voided.orders === 1 ? '' : 's'}
+      worth ${money2(c.voided.amount_cents)} are excluded entirely, along with any tender on them.`);
+  }
+  notes.push(`<span class="dim">ℹ️</span> Cost of goods here is the <b>landed cost of what sold</b>. It is not
+    what you spent this period — inventory bought and not yet sold is on the <b>Inventory</b> tab, and this
+    tab carries no operating expenses at all, so gross profit is not take-home.`);
+  document.getElementById('fin-money-note').innerHTML = notes.join('<br><br>');
+
+  // ── Products ──────────────────────────────────────────────────────────────
+  const prods = d.products || [];
+  document.getElementById('fin-products-body').innerHTML = prods.map(p => `<tr>
+      <td><strong>${finName(p)}</strong></td>
+      <td class="num">${p.units}</td>
+      <td class="num">${p.orders}</td>
+      <td class="num">${money2(p.revenue_cents)}</td>
+      <td class="num">${money2(p.cogs_cents)}</td>
+      <td class="num"><strong>${money2(p.profit_cents)}</strong></td>
+      <td class="num">${p.lines_missing_cost
+        ? `<span class="dim" title="${p.lines_missing_cost} sold unit(s) have no recorded cost">—</span>`
+        : finPct(p.margin_pct)}</td>
+      <td class="dim">${esc(p.last_sold || '')}</td>
+    </tr>`).join('');
+  document.getElementById('fin-products-none').style.display = prods.length ? 'none' : 'block';
+
+  // ── Channels ──────────────────────────────────────────────────────────────
+  document.getElementById('fin-channels-body').innerHTML = (d.channels || []).map(ch => `<tr>
+      <td><strong>${esc(ch.channel)}</strong></td>
+      <td class="num">${ch.orders}</td>
+      <td class="num">${ch.units}</td>
+      <td class="num">${money2(ch.revenue_cents)}</td>
+      <td class="num">${money2(ch.profit_cents)}</td>
+      <td class="num">${finPct(ch.margin_pct)}</td>
+      <td class="num">${money2(ch.avg_order_cents)}</td>
+    </tr>`).join('');
 }
 
 function showToast(msg) {
