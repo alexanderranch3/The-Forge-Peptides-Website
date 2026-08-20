@@ -19,6 +19,7 @@
 // body. A body-supplied account id would let anyone read any account by guessing.
 
 const { rpc } = require('./_order-sync');
+const { CATALOG } = require('./_catalog');
 const { readSession, clearCookie, configured } = require('./_customer-auth');
 
 const json = (statusCode, body, extra = {}) => ({
@@ -35,10 +36,14 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      const [details, orders, items] = await Promise.all([
+      const [details, orders, items, prices] = await Promise.all([
         rpc('customer_details',     { p_account: session.accountId }),
         rpc('customer_orders',      { p_account: session.accountId }),
         rpc('customer_order_items', { p_account: session.accountId }),
+        // Prices agreed with this customer (migration 043). Fails soft: the shop
+        // showing list price is a cosmetic problem, and create-invoice.js does
+        // its OWN lookup, so what they are CHARGED never depends on this call.
+        rpc('customer_prices', { p_account: session.accountId }).catch(() => []),
       ]);
       const d = (Array.isArray(details) ? details[0] : null) || {};
 
@@ -63,6 +68,25 @@ exports.handler = async (event) => {
         orders: (Array.isArray(orders) ? orders : []).map((o) => ({
           ...o, items: byOrder.get(o.order_no) || [],
         })),
+
+        // ── What this customer pays ──────────────────────────────────────
+        // 🚨 DISPLAY ONLY. The storefront uses this to show their price on the
+        // product cards; create-invoice.js looks the same prices up again from
+        // the session when it charges. Two independent reads of one table, and
+        // the browser can influence neither — so tampering with this list
+        // changes what is shown and never what is billed.
+        // ⚠️ A price above retail is dropped, matching what checkout does with
+        // one: it is a decimal-point slip, and showing it would advertise a
+        // higher price than the shop's own.
+        prices: (Array.isArray(prices) ? prices : []).reduce((out, r) => {
+          const entry = CATALOG[r.site_catalog_id];
+          const cents = Number(r.price_cents);
+          if (!entry || !Number.isFinite(cents) || cents < 0) return out;
+          const listCents = Math.round(entry.price * 100);
+          if (cents > listCents) return out;
+          out.push({ id: r.site_catalog_id, price: cents / 100, list: entry.price });
+          return out;
+        }, []),
       });
     }
 

@@ -21,6 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { verifyToken } = require('./_auth-token');
+const { CATALOG } = require('./_catalog');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -80,7 +81,7 @@ exports.handler = async (event) => {
 
   try {
     const id = encodeURIComponent(partyId);
-    const [profile, orders, charges, payments, grant] = await Promise.all([
+    const [profile, orders, charges, payments, grant, prices, sellable] = await Promise.all([
       sb(`v_customer_profile?select=*&party_id=eq.${id}`),
       // Cancelled orders are included on purpose and labelled: a voided order is
       // part of this customer's history and hiding it invites the question
@@ -98,6 +99,16 @@ exports.handler = async (event) => {
       // means no view has to be rebuilt to show it. Falls back to "no account"
       // rather than throwing, so a profile still opens if 028 is not applied.
       sb(`parties?select=house_account_enabled,house_account_limit_cents&id=eq.${id}`).catch(() => []),
+      // Prices agreed with this customer (migration 043). Falls back to none
+      // rather than throwing, so a profile still opens if 043 is not applied.
+      sb(`v_party_prices?select=variant_id,product_name,variant_name,site_catalog_id,price_cents,note,updated_at`
+         + `&party_id=eq.${id}`).catch(() => []),
+      // Everything the site can sell, so the price editor has something to pick
+      // from. 🔑 A variant with no site_catalog_id is excluded: checkout resolves
+      // through the site catalogue, so a price on one could never apply — and
+      // set_party_price refuses it anyway.
+      sb('variants?select=id,name,site_catalog_id,is_archived,products(name)&site_catalog_id=not.is.null')
+        .catch(() => []),
     ]);
 
     if (!profile.length) {
@@ -141,6 +152,39 @@ exports.handler = async (event) => {
           voided: c.orders?.state === 'CANCELED',
         })),
         house_payments: payments,
+
+        // ── Prices agreed with this customer ──────────────────────────────
+        // 🔑 The RETAIL price comes from CATALOG here, on the server, and is
+        // never stored beside the agreed one. CATALOG is what checkout charges
+        // from, so reading it here means the "was / now" on the profile is the
+        // real comparison rather than two numbers that can drift apart.
+        prices: (prices || []).map((r) => {
+          const entry = CATALOG[r.site_catalog_id];
+          return {
+            variant_id: r.variant_id,
+            site_catalog_id: r.site_catalog_id,
+            name: entry ? entry.name : [r.product_name, r.variant_name].filter(Boolean).join(' '),
+            price_cents: r.price_cents,
+            list_cents: entry ? Math.round(entry.price * 100) : null,
+            note: r.note,
+            updated_at: r.updated_at,
+          };
+        }).sort((a, b) => String(a.name).localeCompare(String(b.name))),
+
+        // What can be given a price: everything the site actually sells.
+        // ⚠️ A variant whose site id is not in CATALOG is dropped — the shop
+        // cannot sell it at any price whatever the database says, so offering
+        // it here would promise something checkout would never honour.
+        sellable: (sellable || [])
+          .filter((v) => CATALOG[v.site_catalog_id])
+          .map((v) => ({
+            variant_id: v.id,
+            site_catalog_id: v.site_catalog_id,
+            name: CATALOG[v.site_catalog_id].name,
+            list_cents: Math.round(CATALOG[v.site_catalog_id].price * 100),
+            archived: v.is_archived === true,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
       }),
     };
   } catch (err) {

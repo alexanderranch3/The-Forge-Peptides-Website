@@ -3276,6 +3276,105 @@ function renderCustomerProfile(d) {
           : '')}
     </div>`;
 
+  // ── Prices agreed with this customer ───────────────────────────────────────
+  // Frank, 2026-08-20: "select the compound or the item that I want to change
+  // the price and then keep it show what the retail price is and then what the
+  // adjusted price is."
+  //
+  // 🔑 RETAIL COMES FROM THE SERVER, out of the same CATALOG constant checkout
+  // charges from — it is never typed here and never stored beside the agreed
+  // price. Two copies of a retail price is two things to keep in sync, and the
+  // "was / now" on this panel has to be the real comparison to be worth showing.
+  //
+  // ⚠️ This panel records a decision; create-invoice.js enforces it, keyed off
+  // the customer's SIGN-IN COOKIE. So a price here only reaches someone who is
+  // signed in — a signed-out shopper pays list, always. The note says so,
+  // because otherwise the first question is "why did they still pay full price?"
+  const prices = d.prices || [];
+  const sellable = d.sellable || [];
+  const priced = new Set(prices.map(x => x.variant_id));
+
+  const priceRows = prices.length ? prices.map(x => {
+    const list = x.list_cents;
+    const off  = list != null ? list - x.price_cents : null;
+    return `<tr>
+      <td><strong>${esc(x.name)}</strong>${x.note ? `<br><span class="dim">${esc(x.note)}</span>` : ''}</td>
+      <td class="num dim" style="text-decoration:line-through;">${list != null ? centsToUsd(list) : '—'}</td>
+      <td class="num" style="color:#FF6A00;font-weight:700;">${centsToUsd(x.price_cents)}</td>
+      <td class="num">${off == null ? '<span class="dim">—</span>'
+        : off > 0 ? `<span style="color:#28a745;">${centsToUsd(off)} off</span>`
+        : off < 0 ? `<span class="warn-cell">${centsToUsd(-off)} ABOVE retail</span>`
+        : '<span class="dim">same as retail</span>'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn-sm" onclick="editCustomerPrice('${esc(p.party_id)}','${esc(x.variant_id)}',${x.price_cents},${list},'${esc(String(x.name).replace(/'/g, "\\'"))}')">Change</button>
+        <button class="btn-sm danger" onclick="clearCustomerPrice('${esc(p.party_id)}','${esc(x.variant_id)}','${esc(String(x.name).replace(/'/g, "\\'"))}')">Remove</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5" style="color:#888;padding:18px;">
+      No agreed prices — ${esc(p.display_name || 'this customer')} pays the list price on everything.</td></tr>`;
+
+  // ⚠️ Products they already have a price for are still listed, marked, so
+  // picking one is a change rather than a silent no-op.
+  const options = sellable.map(v =>
+    `<option value="${esc(v.variant_id)}" data-list="${v.list_cents}">${esc(v.name)} — ${centsToUsd(v.list_cents)}${
+      priced.has(v.variant_id) ? ' (already agreed)' : ''}${v.archived ? ' · retired' : ''}</option>`).join('');
+
+  const priceBlock = `
+    <div class="house-panel" style="margin-top:16px;">
+      <div class="house-head">
+        <div>
+          <h3>Their prices
+            ${prices.length ? `<span class="badge badge-paid">${prices.length} AGREED</span>`
+                            : '<span class="badge badge-other">LIST PRICE</span>'}</h3>
+          <p>Set what ${esc(p.display_name || 'this customer')} pays for a particular product.
+             It applies automatically at checkout — <b>no promo code, nothing to share</b>.</p>
+        </div>
+        <div class="house-actions">
+          <button class="btn-primary btn-sm" onclick="toggleCustomerPriceForm()">Set a price</button>
+        </div>
+      </div>
+
+      <div class="house-pay" id="cust-price-form" style="display:none;">
+        <div class="field-grid">
+          <div class="field"><label>Product</label>
+            <select id="cust-price-variant" onchange="onCustomerPriceProduct()">
+              <option value="">Choose a product…</option>
+              ${options}
+            </select>
+            <div class="hint" id="cust-price-list">Only what the shop sells can be priced.</div></div>
+          <div class="field"><label>What they pay</label>
+            <input id="cust-price-amount" type="text" inputmode="decimal" placeholder="75.00"
+                   oninput="onCustomerPriceAmount()">
+            <div class="hint" id="cust-price-diff">&nbsp;</div></div>
+          <div class="field"><label>Note <span class="dim">(optional)</span></label>
+            <input id="cust-price-note" type="text" placeholder="friend rate, bulk deal…"></div>
+        </div>
+        <div class="editor-actions">
+          <button class="btn-primary" onclick="submitCustomerPrice('${esc(p.party_id)}')">Save this price</button>
+          <button class="btn-sm" onclick="document.getElementById('cust-price-form').style.display='none';">Cancel</button>
+          <span class="one-way-note">A promo code <b>cannot</b> discount an agreed price any further.</span>
+        </div>
+      </div>
+
+      <table style="margin-top:12px;">
+        <thead><tr>
+          <th>Product</th><th class="num">Retail</th><th class="num">They pay</th>
+          <th class="num">Difference</th><th></th>
+        </tr></thead>
+        <tbody>${priceRows}</tbody>
+      </table>
+
+      ${prices.length ? `<div class="hint" style="margin-top:10px;">
+        ⚠️ These apply on the website only to a <b>signed-in</b> session — the price is tied to the
+        account, never to the email typed at checkout. Signed out, they pay list.
+        ${p.email
+          ? ''
+          : '<br>🚨 <b>No email address on file, so this customer cannot sign in at all and will always '
+            + 'pay list price on the website.</b> Add one to their record, or charge the agreed price by '
+            + 'hand on a counter sale.'}
+      </div>` : ''}
+    </div>`;
+
   const orderRows = d.orders.length ? d.orders.map(o => `
     <tr${o.voided ? ' style="opacity:.5;"' : ''}>
       <td style="white-space:nowrap;color:#888;">${String(o.placed_at || '').slice(0, 10)}</td>
@@ -3308,6 +3407,7 @@ function renderCustomerProfile(d) {
   document.getElementById('cust-modal-body').innerHTML = `
     <div style="background:#141414;border:1px solid #262626;border-radius:12px;padding:18px;">
       ${houseBlock}
+      ${priceBlock}
       <div class="stats" style="margin-bottom:18px;">
         ${tile('Orders', p.order_count || 0, p.days_since_last_order != null ? `last one ${p.days_since_last_order} days ago` : 'never ordered')}
         ${tile('Lifetime spend', centsToUsd(p.lifetime_cents))}
@@ -3323,6 +3423,108 @@ function renderCustomerProfile(d) {
       <table><thead><tr><th>Date</th><th>What</th><th class="num">Amount</th></tr></thead>
         <tbody>${ledgerRows}</tbody></table>
     </div>`;
+}
+
+// ── Agreeing a price with one customer ───────────────────────────────────────
+// 🔑 Retail is read off the <option> the server rendered, never re-derived here.
+// The page holds no copy of the price list, so it cannot drift from CATALOG.
+
+function toggleCustomerPriceForm() {
+  const f = document.getElementById('cust-price-form');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display === 'block') document.getElementById('cust-price-variant').focus();
+}
+
+function custPriceListCents() {
+  const sel = document.getElementById('cust-price-variant');
+  const opt = sel.options[sel.selectedIndex];
+  const v = opt && opt.getAttribute('data-list');
+  return v == null || v === '' ? null : Number(v);
+}
+
+function onCustomerPriceProduct() {
+  const list = custPriceListCents();
+  document.getElementById('cust-price-list').innerHTML = list == null
+    ? 'Only what the shop sells can be priced.'
+    : `Retail is <b>${centsToUsd(list)}</b>.`;
+  onCustomerPriceAmount();
+}
+
+// Says what the customer will actually pay, and what it costs to say yes,
+// before the button is pressed rather than in a toast afterwards.
+function onCustomerPriceAmount() {
+  const list = custPriceListCents();
+  const cents = custPriceCents();
+  const note = document.getElementById('cust-price-diff');
+  if (list == null || cents == null) { note.innerHTML = '&nbsp;'; return; }
+  const off = list - cents;
+  note.innerHTML = off > 0
+    ? `<span style="color:#28a745;">${centsToUsd(off)} off retail</span>`
+    : off === 0
+      ? '<span class="dim">the same as retail</span>'
+      // ⚠️ Almost always a decimal point in the wrong place, and the customer is
+      // the one who would pay for it. The server ignores an above-list price at
+      // checkout too — belt and braces.
+      : `<span class="warn-cell">⚠️ ${centsToUsd(-off)} ABOVE retail — check the decimal point</span>`;
+}
+
+function custPriceCents() {
+  const raw = String(document.getElementById('cust-price-amount').value || '').replace(/[^0-9.]/g, '').trim();
+  if (raw === '') return null;
+  const n = Math.round(Number(raw) * 100);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function editCustomerPrice(partyId, variantId, currentCents, listCents, name) {
+  const f = document.getElementById('cust-price-form');
+  f.style.display = 'block';
+  document.getElementById('cust-price-variant').value = variantId;
+  document.getElementById('cust-price-amount').value = (currentCents / 100).toFixed(2);
+  document.getElementById('cust-price-note').value = '';
+  onCustomerPriceProduct();
+  document.getElementById('cust-price-amount').focus();
+}
+
+async function submitCustomerPrice(partyId) {
+  const variantId = document.getElementById('cust-price-variant').value;
+  const cents = custPriceCents();
+  if (!variantId) return showToast('Choose a product first');
+  if (cents == null) return showToast('That is not a price');
+  const list = custPriceListCents();
+  if (list != null && cents > list) {
+    // ⚠️ Allowed, but never by accident.
+    if (!confirm(`${centsToUsd(cents)} is ABOVE the ${centsToUsd(list)} retail price.\n\n`
+      + 'At checkout the server ignores an agreed price higher than retail, so they would '
+      + 'still pay retail. Save it anyway?')) return;
+  }
+  await writeCustomerPrice(partyId, variantId, cents,
+    document.getElementById('cust-price-note').value || null,
+    (d) => `${d.name}: ${centsToUsd(d.price_cents)}${d.list_cents != null ? ` (was ${centsToUsd(d.list_cents)})` : ''}`);
+  document.getElementById('cust-price-form').style.display = 'none';
+}
+
+function clearCustomerPrice(partyId, variantId, name) {
+  if (!confirm(`Put ${name} back to the list price for this customer?`)) return;
+  writeCustomerPrice(partyId, variantId, null, null, () => `${name} is back to list price`);
+}
+
+async function writeCustomerPrice(partyId, variantId, priceCents, note, describe) {
+  try {
+    const res = await fetch('/.netlify/functions/set-customer-price', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({ party_id: partyId, variant_id: variantId, price_cents: priceCents, note }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.hint ? `${d.error} ${d.hint}` : (d.error || 'Could not save that'));
+    showToast(describe(d));
+    if (custOpenId) openCustomer(custOpenId);
+  } catch (err) {
+    showToast('Could not save it: ' + err.message);
+  }
 }
 
 // ── Recording a payoff ───────────────────────────────────────────────────────

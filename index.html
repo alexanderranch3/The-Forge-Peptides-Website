@@ -1237,6 +1237,12 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
       <div class="ruo-tag"><i class="bi bi-exclamation-triangle-fill"></i> For Research Use Only</div>
     </div>
 
+    <!-- Shown only to a signed-in customer who has an agreed price on something.
+         Without it a lower number on a card just looks like a mistake. -->
+    <div id="forge-your-price-note" style="display:none;margin:0 0 18px;padding:11px 14px;
+         background:rgba(255,106,0,0.08);border:1px solid rgba(255,106,0,0.28);border-radius:10px;
+         color:#ffb454;font-size:0.86rem;"></div>
+
     <div class="cat-tabs">
       <div class="cat-tab active">All Products</div>
       <div class="cat-tab">GH / Hormone</div>
@@ -2178,7 +2184,46 @@ async function loadAccount() {
     forgeAccount = res.ok ? await res.json() : null;
   } catch (_) { forgeAccount = null; }
   renderAccountNav();
+  applyCustomerPrices();
   return forgeAccount;
+}
+
+/**
+ * Show a signed-in customer THEIR price on the shop, not just at checkout.
+ *
+ * 🔑 It overlays onto soldOutMap and re-runs applyLivePrices(), so every surface
+ * that already draws a price — the cards, the size selectors, the reference
+ * table — picks it up with no second code path to keep in step.
+ *
+ * 🚨 THIS IS DISPLAY ONLY AND CANNOT AFFECT WHAT IS CHARGED. create-invoice.js
+ * rebuilds every line from its own catalogue and looks the agreed prices up
+ * again from the sign-in cookie. Editing this map in devtools changes what the
+ * page SAYS and nothing about the bill — which is the right way round.
+ */
+function applyCustomerPrices() {
+  const list = (forgeAccount && forgeAccount.signedIn && forgeAccount.prices) || [];
+  if (!list.length) return;
+  let changed = 0;
+  list.forEach((r) => {
+    if (!r || !r.id || typeof r.price !== 'number') return;
+    // Only ever downward. A price above list would be a decimal slip, and the
+    // server ignores one too.
+    if (typeof r.list === 'number' && r.price > r.list) return;
+    const live = soldOutMap[r.id] || (soldOutMap[r.id] = {});
+    live.list_price = live.price != null ? live.price : r.list;
+    live.price = r.price;
+    live.your_price = true;
+    changed++;
+  });
+  if (!changed) return;
+  applyLivePrices();
+  const banner = document.getElementById('forge-your-price-note');
+  if (banner) {
+    banner.textContent = changed === 1
+      ? 'One product is showing your agreed price.'
+      : `${changed} products are showing your agreed prices.`;
+    banner.style.display = 'block';
+  }
 }
 
 function renderAccountNav() {
@@ -3598,6 +3643,9 @@ function applyLivePrices() {
   });
 }
 
+// 🚨 syncInventory() rewrites soldOutMap from the public feed, which does not
+// know who is signed in — so the agreed prices have to be laid back on top
+// afterwards or they vanish on the first refresh.
 async function syncInventory() {
   try {
     const res = await fetch('/.netlify/functions/get-inventory');
@@ -3627,6 +3675,9 @@ async function syncInventory() {
     });
 
     applyLivePrices();
+    // The feed is public and knows nothing about who is signed in, so it has
+    // just overwritten any agreed price with the list one. Put them back.
+    applyCustomerPrices();
   } catch (e) {
     // Silently fail — site works fine (on its static prices) without live data
     console.warn('Inventory sync skipped:', e.message);

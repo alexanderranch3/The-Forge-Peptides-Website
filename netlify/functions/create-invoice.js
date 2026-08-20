@@ -29,6 +29,10 @@ const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice
 const { checkAvailability, shortageMessage, checkFulfillable, blockedMessage } = require('./_stock');
 const { nameToId } = require('./_catalog-map');
 const { CATALOG } = require('./_catalog');
+// 🔑 Aliased on purpose: `readSession` in this file would read as "the checkout
+// session". This one is the CUSTOMER's sign-in cookie, and it is the only thing
+// allowed to decide whose prices apply.
+const { readSession: readCustomerSession } = require('./_customer-auth');
 
 // Thrown for anything the caller got wrong, so the handler can answer 400 rather
 // than 500. ⚠️ It lived beside the CATALOG literal and came within a line of
@@ -98,7 +102,14 @@ const FALLBACK_SHIPPING       = 25;
 
 // Rebuild every line item from the server-side catalog. Client-supplied price
 // and name are ignored entirely. Throws on unknown ids or invalid quantities.
-function sanitizeItems(rawItems) {
+//
+// 🚨 `agreed` IS A MAP THE SERVER BUILT FROM THE SESSION COOKIE, never anything
+// the browser sent. That distinction is the entire security of per-customer
+// pricing: the checkout form's email is attacker-controlled, so keying a price
+// off it would mean anyone who knows a customer's address gets their price —
+// strictly worse than the leaked promo code this feature replaces. The caller
+// gets this map from customerPricesFor(event) below and nowhere else.
+function sanitizeItems(rawItems, agreed = null) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     throw new ValidationError('No items in order.');
   }
@@ -111,8 +122,52 @@ function sanitizeItems(rawItems) {
     if (!Number.isFinite(qty) || qty < 1 || qty > MAX_QTY_PER_ITEM) {
       throw new ValidationError(`Invalid quantity for ${raw.id}`);
     }
-    return { id: raw.id, name: entry.name, price: entry.price, qty };
+    // A price of 0 is a legitimate agreed price, so check for presence rather
+    // than truthiness — `agreed[id] || entry.price` would quietly bill a comp
+    // at full retail.
+    const has = agreed && Object.prototype.hasOwnProperty.call(agreed, raw.id)
+      && Number.isFinite(agreed[raw.id]);
+    // ⚠️ An agreed price ABOVE list is ignored. Frank sets these to give people
+    // a better price; a number above retail is a decimal-point slip, and the
+    // customer is the one who would pay for it.
+    const useAgreed = has && agreed[raw.id] / 100 <= entry.price;
+    return {
+      id: raw.id,
+      name: entry.name,
+      price: useAgreed ? agreed[raw.id] / 100 : entry.price,
+      qty,
+      list_price: entry.price,
+      agreed: useAgreed,
+    };
   });
+}
+
+// The prices this SIGNED-IN customer has agreed with us, keyed by catalogue id.
+//
+// 🔑 Identity comes only from the HttpOnly cookie's HMAC — the same rule
+// account.js states for itself. A signed-out shopper gets an empty map and
+// therefore list price, which is correct: there is no way to recognise someone
+// who has not identified themselves, and guessing is the vulnerability.
+//
+// ⚠️ FAILS OPEN TO LIST PRICE. If the lookup errors, the customer is charged
+// retail and the sale goes through. A till must always take money, and the
+// worst case here is that someone pays the price everybody else pays.
+async function customerPricesFor(event) {
+  try {
+    const session = readCustomerSession(event.headers || {});
+    if (!session) return null;
+    const rows = await rpc('customer_prices', { p_account: session.accountId });
+    if (!Array.isArray(rows) || !rows.length) return null;
+    const out = {};
+    for (const r of rows) {
+      const cents = Number(r.price_cents);
+      if (r.site_catalog_id && Number.isFinite(cents) && cents >= 0) out[r.site_catalog_id] = cents;
+    }
+    return Object.keys(out).length ? out : null;
+  } catch (err) {
+    console.error('customer pricing lookup failed, using list price:', err.message);
+    return null;
+  }
 }
 
 // Clamp shipping: pickup is always free, free-shipping threshold is enforced
@@ -316,6 +371,9 @@ async function validatePromo(promoCode, customerId, customerEmail) {
 // ── Order ─────────────────────────────────────────────────────────────────────
 
 const FL_TAX_RATE = 7.0; // Florida state (6%) + Miami-Dade county surtax (1%)
+// A stable uid so line items can point at the discount, the way they already
+// point at FL_TAX_UID. Only used when a basket mixes agreed and ordinary lines.
+const PROMO_UID = 'forge-promo';
 const FL_TAX_UID  = 'fl-sales-tax';
 
 /**
@@ -349,10 +407,22 @@ async function createOrderInDashboard({
   // Shipping itself is not taxable in Florida.
   const applyFlTax = fulfillment === 'Local Pickup' || String(state || '').toUpperCase() === 'FL';
 
+  // 🚨 A NEGOTIATED PRICE IS FINAL — A PROMO CODE CANNOT CUT IT FURTHER.
+  // Frank, 2026-08-20: "if any prices are adjusted on my end, those prices can't
+  // be adjusted further by a promo code." So this is not "the better of the
+  // two": it is a per-LINE exclusion. A basket holding one agreed line and one
+  // ordinary line still discounts the ordinary one normally.
+  // 🔑 With no agreed line, agreedCents is 0 and every expression below is
+  // arithmetically identical to what it was before — same single rounding, same
+  // base. A test asserts the untouched baskets still charge to the cent.
+  const agreedCents = items.reduce(
+    (n, i) => (i.agreed ? n + Math.round(i.price * 100) * i.qty : n), 0);
+
   // ORDER scope in Square, so it covers shipping too — proven by FP-001067
   // ($160.00 product + $25.00 shipping, $18.50 off = 10% of $185.00).
   const pct        = promoPercent(promoValid);
-  const discCents  = pct ? Math.round((productCents + shipCents) * (pct / 100)) : 0;
+  const discBase   = productCents - agreedCents + shipCents;
+  const discCents  = pct ? Math.round(discBase * (pct / 100)) : 0;
 
   // 🚨 TAX IS CHARGED ON THE DISCOUNTED AMOUNT, NOT THE FULL SUBTOTAL. Every
   // real discounted order says so to two decimal places: FP-396224, FP-507650,
@@ -364,7 +434,14 @@ async function createOrderInDashboard({
   // have been charged $11.20 of tax on a free basket. The lesson: the storefront
   // had it right all along, and the assertion that agreed with the hint was
   // testing a premise nobody had checked against the books.
-  const taxableCents = Math.round(productCents * (1 - pct / 100));
+  // 🔑 The product's share of the discount, which is what reduces taxable value —
+  // the shipping share never did. With nothing agreed this is exactly the old
+  // expression `productCents * (1 - pct/100)`; the two only diverge once a line
+  // is excluded from the base, and then the excluded line is fully taxable,
+  // which is right because nothing was discounted off it.
+  const taxableCents = agreedCents === 0
+    ? Math.round(productCents * (1 - pct / 100))
+    : productCents - (pct ? Math.round((productCents - agreedCents) * (pct / 100)) : 0);
   const taxCents     = applyFlTax ? Math.round(taxableCents * (FL_TAX_RATE / 100)) : 0;
 
   // 🔑 An owner test order is INTERNAL, not a SALE. It moves stock because the
@@ -470,6 +547,16 @@ async function createOrder(orderNum, customerId, items, shippingAmount, shipping
   const applyFlTax = fulfillment === 'Local Pickup' || (state || '').toUpperCase() === 'FL';
 
   // Product line items — apply FL tax when shipping to Florida
+  // 🚨 A NEGOTIATED PRICE IS FINAL HERE TOO. Square's ORDER-scope discount hits
+  // every line, so a basket with an agreed price would have been discounted
+  // twice on this path while the dashboard path excluded it — the same order
+  // costing two different amounts depending on an environment variable, which
+  // is the exact failure the money-rules tests exist to prevent.
+  // 🔑 The scope only changes WHEN something is agreed. With an ordinary basket
+  // the discount stays ORDER-scope exactly as before, so no existing order's
+  // total can shift by a cent on a rounding difference between the two models.
+  const anyAgreed = promoValid && items.some((i) => i.agreed);
+
   const lineItems = items.map(item => {
     const li = {
       name:     item.name,
@@ -477,16 +564,21 @@ async function createOrder(orderNum, customerId, items, shippingAmount, shipping
       base_price_money: { amount: Math.round(item.price * 100), currency: 'USD' },
     };
     if (applyFlTax) li.applied_taxes = [{ tax_uid: FL_TAX_UID }];
+    if (anyAgreed && !item.agreed) li.applied_discounts = [{ discount_uid: PROMO_UID }];
     return li;
   });
 
-  // Shipping is not taxable in Florida
+  // Shipping is not taxable in Florida — but it IS discountable: the promo is
+  // order scope and FP-001067 proves it covers shipping ($160 product + $25
+  // shipping, $18.50 off = 10% of $185.00).
   if (shippingAmount > 0) {
-    lineItems.push({
+    const ship = {
       name: shippingLabel ? `Shipping — ${shippingLabel}` : 'Shipping',
       quantity: '1',
       base_price_money: { amount: Math.round(shippingAmount * 100), currency: 'USD' },
-    });
+    };
+    if (anyAgreed) ship.applied_discounts = [{ discount_uid: PROMO_UID }];
+    lineItems.push(ship);
   }
 
   const recipient = {
@@ -566,11 +658,19 @@ async function createOrder(orderNum, customerId, items, shippingAmount, shipping
       FORGE10: 'FORGE10 — 10% New Customer Discount',
       OWNER:   'Owner test order — 100%',
     }[promoValid] || `${promoValid} discount`;
-    orderBody.order.discounts = [{
-      name: promoLabel,
-      percentage: String(promoPercent(promoValid)),
-      scope: 'ORDER',
-    }];
+    orderBody.order.discounts = [anyAgreed
+      ? {
+          // Applied per line, and deliberately NOT applied to the agreed ones.
+          uid: PROMO_UID,
+          name: `${promoLabel} (not on your agreed prices)`,
+          percentage: String(promoPercent(promoValid)),
+          scope: 'LINE_ITEM',
+        }
+      : {
+          name: promoLabel,
+          percentage: String(promoPercent(promoValid)),
+          scope: 'ORDER',
+        }];
   }
 
   const res  = await fetch(`${SQUARE_API}/orders`, {
@@ -665,7 +765,12 @@ exports.handler = async (event) => {
   try {
     // Rebuild items + shipping from the server-side catalog — never trust
     // client-supplied prices, names, or amounts.
-    const cleanItems = sanitizeItems(items);
+    //
+    // 🔑 The one exception is a price THIS SERVER looked up for THIS session:
+    // customerPricesFor() reads the sign-in cookie and asks the database. The
+    // browser cannot influence it, and a signed-out shopper gets list price.
+    const agreedPrices = await customerPricesFor(event);
+    const cleanItems = sanitizeItems(items, agreedPrices);
     const subtotal   = cleanItems.reduce((s, i) => s + i.price * i.qty, 0);
     const shipping   = sanitizeShipping(shippingAmount, fulfillment, subtotal);
     const shipLabel  = shippingLabel ? String(shippingLabel).slice(0, 80) : null;
