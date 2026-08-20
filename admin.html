@@ -1548,13 +1548,24 @@ async function setPaid(orderId, status) {
     // Marking paid also records the Zelle payment as a real Square tender, so
     // Square's sales reports stay accurate. If that leg failed the order is
     // still marked paid here — say so, rather than let the books drift quietly.
+    // 🔑 The toast reports BOTH legs. Marking paid records a real Square tender
+    // AND pushes the result into this dashboard — and either can fail on its
+    // own. A silent "done" that left the money out of revenue until someone
+    // pressed Sync is exactly how FP-001004 sat unpaid for three months.
+    const who = order.orderNumber || 'Order';
     if (status === 'PAID') {
-      showToast(data.tenderRecorded
-        ? `${order.orderNumber || 'Order'} marked paid — recorded in Square`
-        : `${order.orderNumber || 'Order'} marked paid — ⚠️ payment NOT recorded in Square, add it manually`);
+      if (!data.tenderRecorded) {
+        showToast(`${who} marked paid — ⚠️ payment NOT recorded in Square, add it manually`);
+      } else if (data.dashboardNote) {
+        showToast(`${who} marked paid — ⚠️ ${data.dashboardNote}`);
+      } else {
+        showToast(`${who} marked paid — in the books here and in Square`);
+      }
     } else {
-      showToast(`${order.orderNumber || 'Order'} back to awaiting Zelle`);
+      showToast(`${who} back to awaiting Zelle`);
     }
+    // Revenue and margins just moved, so anything reading them is stale.
+    if (data.dashboardSynced) { finLoaded = false; invLoaded = false; }
   } catch (err) {
     order.status = previous; // Square didn't take it — put the row back
     updateStats();

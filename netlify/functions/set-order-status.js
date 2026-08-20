@@ -7,10 +7,28 @@
 // and this endpoint is what writes it, driven by the Mark Paid button in
 // /admin.html. See create-invoice.js and get-orders.js.
 //
-// This records a bookkeeping flag. It does NOT move money and does not touch any
-// Square payment endpoint — those are blocked on this account.
+// This records a bookkeeping flag. It does NOT move money — but it DOES record an
+// EXTERNAL tender (added 2026-08-14), which is bookkeeping rather than
+// processing and works on a deactivated account.
+//
+// 🔑 AND IT NOW PUSHES THE RESULT STRAIGHT INTO THE DASHBOARD (2026-08-20,
+// step 1 of moving off Square). It used to write to Square only, leaving the
+// dashboard to find out on a sync — and FP-001004 proved how badly that fails:
+// marked paid in Square, invisible here for three months, because the sync
+// window was 60 days and the order was 91 days old. A payment you have just
+// recorded must be true on the screen you recorded it from.
+//
+// 🚨 THE DOUBLE-COUNT TRAP THIS AVOIDS. The obvious shortcut is to write a
+// dashboard tender directly from the payment response. Do not: Square's PAYMENT
+// id is not the same thing as the order's TENDER id, and sync_order_tenders()
+// upserts on the tender id (tenders_square_id_key). A directly-written row would
+// carry the wrong key, and the next re-sync would add the real one alongside it
+// — the same money, counted twice, in the books. So this re-READS the order
+// after the payment and syncs THAT, letting the tender arrive with the id every
+// future sync will match on.
 
 const { verifyToken } = require('./_auth-token');
+const { syncOrder, configured } = require('./_order-sync');
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
@@ -163,6 +181,41 @@ exports.handler = async (event) => {
       }
     }
 
+    // ── Make the dashboard agree, now rather than on some later sync ─────────
+    // ⚠️ Only ever syncs a FRESHLY READ order. Syncing the copy fetched before
+    // the payment would carry the new PAID metadata with an empty tenders array,
+    // and paymentState() reads that metadata — writing exactly the "paid with no
+    // tender" state that hid $1,501.44 of revenue until migration 026. If the
+    // re-read fails, the dashboard is left alone and a later sync fixes it;
+    // being briefly behind is recoverable, being wrong is not.
+    let dashboardSynced = false;
+    let dashboardNote   = null;
+
+    if (configured()) {
+      try {
+        const freshRes  = await fetch(`${SQUARE_API}/orders/${encodeURIComponent(orderId)}`, {
+          headers: squareHeaders(),
+        });
+        const freshData = await freshRes.json();
+        if (freshData.order) {
+          await syncOrder(freshData.order);
+          dashboardSynced = true;
+          // Square can take a moment to attach a just-created payment to the
+          // order. Saying so beats a silent "done" that leaves the money out of
+          // revenue until someone presses Sync.
+          const freshHasTender = Array.isArray(freshData.order.tenders) && freshData.order.tenders.length > 0;
+          if (status === 'PAID' && tenderRecorded && !freshHasTender) {
+            dashboardNote = 'Square has not attached the payment to the order yet — press Sync in a moment.';
+          }
+        } else {
+          dashboardNote = 'Could not re-read the order from Square; the dashboard will catch up on the next sync.';
+        }
+      } catch (syncErr) {
+        dashboardNote = 'The dashboard will catch up on the next sync.';
+        console.error(`DASHBOARD SYNC FAILED for ${orderId}:`, syncErr.message);
+      }
+    }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
@@ -171,6 +224,9 @@ exports.handler = async (event) => {
         status,
         tenderRecorded,
         tenderNote,
+        // So the page can say whether this is true HERE, not just in Square.
+        dashboardSynced,
+        dashboardNote,
         orderNumber: updData.order.metadata?.forge_order_number || updData.order.reference_id || '',
       }),
     };
