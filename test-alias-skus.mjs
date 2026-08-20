@@ -192,5 +192,17 @@ okTrue('and still for OPEN and COMPLETED',
 const page = readFileSync('./admin.html', 'utf8');
 okTrue('the orders window reaches past 90 days', /<option value="(180|365)"/.test(page));
 
+console.log('\n— 🚨 and the sync has to reach it too —');
+// Marking FP-001004 paid writes the tender to SQUARE; the dashboard only learns
+// it on a sync. Two more hides sat behind that: the sync window was hardcoded to
+// 60 days (the order was 91 days old), and the only Sync button lived in a band
+// shown solely when the dashboard was a day or more behind — so on a day you had
+// already sold something there was no way to sync at all.
+okTrue('the sync window follows the list, not a hardcoded 60',
+  /days:\s*Math\.max\(60,\s*Number\(document\.getElementById\('days-select'\)/.test(page));
+okTrue('there is a Sync button outside the staleness band',
+  /id="sync-btn-always"/.test(page));
+okTrue('and it drives the same runSync', /runSync\('sync-btn-always'\)/.test(page));
+
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

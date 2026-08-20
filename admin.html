@@ -456,6 +456,14 @@
       </select>
       <button class="btn btn-primary" onclick="openSale()" title="Ring up an in-person sale">+ New sale</button>
       <button class="btn btn-outline" onclick="loadOrders()">↺ Refresh</button>
+      <!-- 🔑 ALWAYS PRESENT. The other Sync button lives in a band that only
+           appears when the dashboard is a day or more behind Square — so on a
+           day you have already sold something, there was no way to sync at all,
+           and a payment marked in Square could not be pulled in. A control you
+           need occasionally must not be hidden by a heuristic about when you
+           usually need it. -->
+      <button class="btn btn-outline" id="sync-btn-always" onclick="runSync('sync-btn-always')"
+              title="Pull orders and payments back from Square, over the window selected on the left">⟳ Sync from Square</button>
       <button class="btn btn-primary" onclick="exportCSV()">⬇ Export Pirate Ship CSV</button>
     </div>
   </div>
@@ -2688,8 +2696,9 @@ async function checkSyncStatus() {
   } catch { /* the banner is a convenience, never a blocker */ }
 }
 
-async function runSync() {
-  const btn = document.getElementById('sync-btn');
+async function runSync(btnId = 'sync-btn') {
+  const btn = document.getElementById(btnId);
+  const label = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Syncing…';
   try {
@@ -2699,7 +2708,13 @@ async function runSync() {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
       },
-      body: JSON.stringify({ days: 60 }),
+      // 🚨 THE WINDOW HAS TO REACH THE ORDER YOU ARE LOOKING AT. This was
+      // hardcoded to 60 days, so an order older than that could never be
+      // brought back from Square however many times you pressed Sync —
+      // FP-001004 was 91 days old, marked paid in Square, and the dashboard
+      // could not learn about it. The floor keeps the old behaviour when the
+      // list is on a narrower window; sync-orders caps at 400 days.
+      body: JSON.stringify({ days: Math.max(60, Number(document.getElementById('days-select').value) || 60) }),
     });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Sync failed');
@@ -2713,7 +2728,9 @@ async function runSync() {
     showToast('Sync failed: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Sync from Square';
+    // Restores whichever label this button had — the two say slightly
+    // different things and a shared hardcoded string would rename one of them.
+    btn.textContent = label;
   }
 }
 
