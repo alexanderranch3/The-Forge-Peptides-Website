@@ -120,7 +120,7 @@ exports.handler = async (event) => {
       statusCode: timedOut ? 504 : (err.status || 500), headers,
       body: JSON.stringify({
         error: missing ? 'House accounts are not set up in the database yet.' : msg,
-        hint: missing ? 'Apply replace-square-phase1/fixes/024-house-accounts.sql, then reload.' : undefined,
+        hint: missing ? 'Apply replace-square-phase1/fixes/025-house-accounts.sql, then reload.' : undefined,
       }),
     };
   }

@@ -144,7 +144,7 @@ exports.handler = async (event) => {
           error: 'Only a sale can go on a house account — your own use and give-aways are not owed to anyone' }) };
       }
       // A tab has to belong to someone. create_manual_order will create the
-      // party from customer{} if it is new, and migration 024's trigger attaches
+      // party from customer{} if it is new, and migration 025's trigger attaches
       // the charge to whoever that turns out to be — but an unnamed walk-in
       // would open a tab nobody could ever be asked to settle.
       const named = input.party_id || String(input.customer?.name || '').trim();

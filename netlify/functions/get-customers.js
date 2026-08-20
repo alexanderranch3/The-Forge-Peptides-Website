@@ -83,7 +83,7 @@ exports.handler = async (event) => {
   // What each customer still owes on their house account.
   //
   // 🔑 FAILS SOFT AND SILENTLY, on purpose. v_house_account_balance arrives with
-  // migration 024; until that is applied this returns an empty map and the
+  // migration 025; until that is applied this returns an empty map and the
   // picker works exactly as it did before. The customer list is the till's path
   // to ringing up a sale — it must never stop working because a reporting view
   // is missing.
@@ -127,7 +127,7 @@ exports.handler = async (event) => {
         kind: p.kind,
         order_count: s.order_count,
         last_order_at: s.last_order_at,
-        // 0 when nothing is owed, and also 0 before migration 024 — the two are
+        // 0 when nothing is owed, and also 0 before migration 025 — the two are
         // indistinguishable here by design, because both mean "no tab to chase".
         house_balance_cents: owed.get(p.id) || 0,
       };

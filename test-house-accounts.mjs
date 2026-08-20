@@ -85,7 +85,7 @@ console.log('\n1. charging a sale to a tab');
   okTrue('and is told to name them', /name the customer/i.test(json(res).error));
   ok('🚨 and nothing was written', calls.filter(c => c.method === 'POST').length, 0);
 
-  // A new customer is fine — migration 024's trigger attaches the charge to
+  // A new customer is fine — migration 025's trigger attaches the charge to
   // whichever party create_manual_order ends up creating.
   stub({ 'rpc/create_manual_order': { status: 200, body: { order_id: 'o2', order_no: 'FP-000502' } } });
   res = await fresh('create-order').handler({ httpMethod: 'POST', headers: AUTH, body: JSON.stringify({
@@ -191,20 +191,20 @@ console.log('\n3. the profile');
     httpMethod: 'GET', headers: AUTH, queryStringParameters: { party_id: PARTY } })).statusCode, 404);
 }
 
-console.log('\n4. before migration 024 is applied, it says so');
+console.log('\n4. before migration 025 is applied, it says so');
 {
   // Otherwise the page shows a raw PostgREST error about a missing relation,
   // which tells Frank nothing he can act on.
   stub({ 'v_customer_profile': { status: 404, body: { message: 'relation "public.v_customer_profile" does not exist' } } });
   let d = json(await fresh('get-customer').handler({ httpMethod: 'GET', headers: AUTH, queryStringParameters: { party_id: PARTY } }));
   okTrue('the profile explains it in plain words', /not set up in the database yet/i.test(d.error));
-  okTrue('and names the file to apply', /024-house-accounts\.sql/.test(d.hint));
+  okTrue('and names the file to apply', /025-house-accounts\.sql/.test(d.hint));
 
   stub({ 'rpc/record_house_payment': { status: 404, body: { message: 'function record_house_payment does not exist' } } });
   d = json(await fresh('record-payment').handler({ httpMethod: 'POST', headers: AUTH,
     body: JSON.stringify({ party_id: PARTY, amount_cents: 100 }) }));
   okTrue('and so does the payoff', /not set up in the database yet/i.test(d.error));
-  okTrue('with the same instruction', /024-house-accounts\.sql/.test(d.hint));
+  okTrue('with the same instruction', /025-house-accounts\.sql/.test(d.hint));
 }
 
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);

@@ -135,7 +135,7 @@ exports.handler = async (event) => {
   } catch (err) {
     const timedOut = err.name === 'AbortError';
     const msg = timedOut ? `Supabase timed out after ${TIMEOUT_MS}ms` : err.message;
-    // A missing view means migration 024 has not been applied yet. Say that,
+    // A missing view means migration 025 has not been applied yet. Say that,
     // rather than handing the page a raw PostgREST error about a relation.
     const missing = /v_customer_profile|house_account_payments|v_house_account_balance/.test(msg)
       && /does not exist|not find|relation/i.test(msg);
@@ -144,7 +144,7 @@ exports.handler = async (event) => {
       statusCode: timedOut ? 504 : (err.status || 500), headers,
       body: JSON.stringify({
         error: missing ? 'House accounts are not set up in the database yet.' : msg,
-        hint: missing ? 'Apply replace-square-phase1/fixes/024-house-accounts.sql, then reload.' : undefined,
+        hint: missing ? 'Apply replace-square-phase1/fixes/025-house-accounts.sql, then reload.' : undefined,
       }),
     };
   }
