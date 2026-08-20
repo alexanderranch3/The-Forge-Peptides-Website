@@ -155,9 +155,15 @@ console.log('\n6. the display switch');
   }] } };
   routes['v_inventory_dashboard'] = { status: 200, body: STOCK_ROWS };
 
+  // 🚨 CHANGED BY STEP 4 (2026-08-20). Square's catalogue is no longer fetched,
+  // so its sold_out flag no longer exists to be kept — with STOCK_SOURCE unset
+  // or 'square' there is simply nothing able to say a product is unavailable,
+  // and the feed fails OPEN. That is deliberate on a public page: a false
+  // "sold out" is a lost sale nobody ever hears about.
   process.env.STOCK_SOURCE = 'square';
   let d = JSON.parse((await load().handler({ httpMethod: 'GET', headers: {} })).body);
-  ok('square source keeps Square\'s flag', d['retatrutide-10mg'].soldOut, true);
+  ok('with no Square catalogue, nothing claims sold out', d['retatrutide-10mg'].soldOut, false);
+  ok('and it still carries the catalogue price', d['retatrutide-10mg'].price, 160);
   ok('and reports its source', d._source, 'square');
 
   process.env.STOCK_SOURCE = 'dashboard';
@@ -168,9 +174,18 @@ console.log('\n6. the display switch');
   ok('and the real count is exposed', d['retatrutide-10mg'].onHand, 2);
   ok('source reported', d._source, 'dashboard');
 
+  // 🚨 CHANGED BY STEP 4. There is no Square flag to fall back to any more, so a
+  // dashboard outage now fails OPEN rather than falling back.
+  //
+  // ⚠️ WORTH BEING HONEST ABOUT: this removes a second line of defence. But what
+  // it removed was STALE — Square's counts have been frozen since the cutover on
+  // 2026-08-19, so its sold-out flags drift further from the truth every day,
+  // and "fall back to a number that stopped moving three weeks ago" is not
+  // safety. The real gate is checkAvailability() at checkout, which reads the
+  // dashboard.
   routes['v_inventory_dashboard'] = { throw: true };
   d = JSON.parse((await load().handler({ httpMethod: 'GET', headers: {} })).body);
-  ok('a dashboard outage falls back to Square', d['retatrutide-10mg'].soldOut, true);
+  ok('a dashboard outage fails open, it does not lie about stock', d['retatrutide-10mg'].soldOut, false);
   ok('and says the source was square', d._source, 'square');
 }
 
@@ -199,7 +214,11 @@ console.log('\n7. a product we cannot ship is shown as unavailable, not sold out
   okTrue('a blocked product Square never heard of still appears', !!d['bpc-157-10mg']);
   ok('and it reads sold out to the button logic', d['bpc-157-10mg'].soldOut, true);
   okTrue('and carries the separate unavailable flag', !!d['bpc-157-10mg'].unavailable);
-  ok('with no price, so the card keeps its static one', d['bpc-157-10mg'].price, null);
+  // 🔑 CHANGED BY STEP 4, and improved: the price now always comes from CATALOG
+  // — the same line of the same file the server charges from — so what a
+  // customer sees and what they are billed cannot drift. It used to be null for
+  // any product Square had never heard of.
+  ok('the price is the catalogue price', d['bpc-157-10mg'].price, 60);
   ok('an unblocked product is untouched', d['retatrutide-10mg'].unavailable, undefined);
 
   // A block must survive real stock: quantity is not the question.

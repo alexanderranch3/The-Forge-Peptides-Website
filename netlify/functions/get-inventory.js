@@ -12,79 +12,51 @@
 // Response shape: { [itemId]: { soldOut: boolean, price: number|null } }
 // (was: { [itemId]: true } for sold-out items only — frontend updated to match.)
 
-const SQUARE_API  = 'https://connect.squareup.com/v2';
-const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
-const { nameToId } = require('./_catalog-map');
 // 🔑 What the storefront actually sells. Safe to require: _catalog.js imports
 // nothing, which is exactly why it was extracted — requiring it back from a
 // module _invoice.js depends on would otherwise be a cycle.
 const { CATALOG } = require('./_catalog');
 const { stockSource, fetchStock, fetchBlocked } = require('./_stock');
 
-const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
+// 🚨 NOTHING SQUARE IS IMPORTED HERE ANY MORE — no token, no location, no API
+// base. That is the point of step 4, not a tidy-up: this is the PUBLIC feed the
+// shop reads on every page load, and it must keep working when Square is gone.
 
 
-async function fetchAllCatalogItems() {
-  const items = [];
-  let cursor = null;
+// 🔑 SQUARE'S CATALOG IS NO LONGER FETCHED (step 4, 2026-08-20). It used to
+// seed this response — which products exist, their price, and a sold_out flag —
+// and every one of those has a better source here:
+//
+//   which products exist → CATALOG. It already decided: a product missing from
+//     it cannot be bought at any price, whatever Square lists.
+//   price               → CATALOG, the documented source of truth that
+//     check-prices.js gates index.html and products.json against. Serving it
+//     from here means the price a customer SEES and the price the server
+//     CHARGES come from the same line of the same file, and cannot drift.
+//   sold out            → the dashboard's real counts, live since 2026-08-19.
+//     Square's flag is binary and only moves when its count crosses zero, so it
+//     could never tell 1 vial from 100 — and it only ever knew about stock that
+//     passed through Square.
+//
+// Removing it also removes a way to be wrong: Square's price could disagree with
+// CATALOG and this endpoint would have published Square's.
 
-  do {
-    const url = `${SQUARE_API}/catalog/list?types=ITEM${cursor ? `&cursor=${cursor}` : ''}`;
-    const res  = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${TOKEN}`,
-        'Square-Version': '2024-01-18',
-      },
-    });
-    const data = await res.json();
-    if (data.objects) items.push(...data.objects);
-    cursor = data.cursor || null;
-  } while (cursor);
-
-  return items;
-}
 
 exports.handler = async () => {
-  if (!TOKEN || !LOCATION_ID) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Missing Square environment variables.' }),
-    };
-  }
-
+  // 🚨 THE SQUARE ENV GUARD IS GONE, DELIBERATELY. It returned 500 when
+  // SQUARE_ACCESS_TOKEN or SQUARE_LOCATION_ID were missing — which would have
+  // taken the whole shop's stock display down the moment those variables were
+  // removed, the very act this migration is working towards. Nothing below
+  // touches Square.
   try {
-    const catalogItems = await fetchAllCatalogItems();
+    // Every product the site sells, in stock until something says otherwise.
+    // ⚠️ FAILS OPEN by construction: if the stock read below cannot answer, this
+    // is what the shop shows — everything available. A false "sold out" is a
+    // lost sale nobody ever hears about, and a reporting outage must never
+    // paint one over stock sitting on the shelf.
     const result = {};
-
-    for (const obj of catalogItems) {
-      if (obj.type !== 'ITEM') continue;
-
-      const itemName   = obj.item_data?.name || '';
-      const variations = obj.item_data?.variations || [];
-
-      // Map at the VARIATION level: a single Square item can hold multiple
-      // variations that belong to different site ids (e.g. the Wolverine 10/10
-      // Stack and 5/5 Blend), each with its own price. Matching on item+variation
-      // name assigns each variation's price to the correct site id.
-      for (const variation of variations) {
-        const varName = variation.item_variation_data?.name || '';
-        const itemId  = nameToId(`${itemName} ${varName}`);
-        if (!itemId) continue;
-
-        const overrides = variation.item_variation_data?.location_overrides || [];
-        const match     = overrides.find(o => o.location_id === LOCATION_ID);
-        const soldOut   = match?.sold_out === true;
-
-        // Price money is in cents.
-        const amount = variation.item_variation_data?.price_money?.amount;
-        const price  = (typeof amount === 'number' && amount > 0) ? amount / 100 : null;
-
-        // Don't let a later variation/item silently overwrite an already-found
-        // sold-out flag or price for the same site id.
-        if (!result[itemId]) result[itemId] = { soldOut: false, price: null };
-        if (soldOut) result[itemId].soldOut = true;
-        if (result[itemId].price === null && price !== null) result[itemId].price = price;
-      }
+    for (const [id, entry] of Object.entries(CATALOG)) {
+      result[id] = { soldOut: false, price: entry.price ?? null };
     }
 
     // ── Stock source ─────────────────────────────────────────────────────────

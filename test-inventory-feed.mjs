@@ -92,5 +92,57 @@ res = await run({ stock: [{ variant_id: 'v9', product_name: 'Mystery', variant_n
 body = JSON.parse(res.body);
 ok('it did not invent a storefront entry', !(body.items || body)['not-a-real-product']);
 
+
+console.log('\n6. 🚨 step 4: the shop does not need Square any more');
+{
+  // The public feed is what every page load reads. It must keep working when
+  // the Square environment variables are removed — that removal is the point of
+  // this migration, and an env guard that 500s would have made it impossible.
+  const saved = { t: process.env.SQUARE_ACCESS_TOKEN, l: process.env.SQUARE_LOCATION_ID };
+  delete process.env.SQUARE_ACCESS_TOKEN;
+  delete process.env.SQUARE_LOCATION_ID;
+  delete require.cache[require.resolve('./netlify/functions/get-inventory.js')];
+  const fresh = require('./netlify/functions/get-inventory.js');
+
+  const res = await fresh.handler();
+  const feed = JSON.parse(res.body);
+  const ids = Object.keys(feed).filter((k) => k[0] !== '_');
+  ok('it answers with no Square env at all', res.statusCode, 200);
+  ok('every catalogue product is listed', ids.length, Object.keys(CATALOG).length);
+  // The dashboard still governs sold-out, exactly as before — removing Square
+  // changed where the LIST comes from, not who decides availability.
+  ok('the dashboard still decides availability', feed._source, 'dashboard');
+
+  // ⚠️ AND WITH NO STOCK SOURCE EITHER, IT FAILS OPEN. This is the property
+  // that matters most on a public page: a false "sold out" is a lost sale
+  // nobody ever hears about, so silence must mean available.
+  const savedSrc = process.env.STOCK_SOURCE;
+  delete process.env.STOCK_SOURCE;
+  delete require.cache[require.resolve('./netlify/functions/_stock.js')];
+  delete require.cache[require.resolve('./netlify/functions/get-inventory.js')];
+  const blind = require('./netlify/functions/get-inventory.js');
+  const blindFeed = JSON.parse((await blind.handler()).body);
+  const blindIds = Object.keys(blindFeed).filter((k) => k[0] !== '_');
+  ok('every product still listed with nothing to ask', blindIds.length, Object.keys(CATALOG).length);
+  // ⚠️ Except anything on the unfulfillable list, which reads sold-out on
+  // purpose whatever the counts say — no labels means it physically cannot
+  // ship, and that is true regardless of which system knows the quantity.
+  const wrongly = blindIds.filter((k) => blindFeed[k].soldOut && !blindFeed[k].unavailable);
+  ok('🚨 nothing is marked sold out for lack of stock information',
+    wrongly.map((k) => [k, blindFeed[k]]), []);
+  if (savedSrc) process.env.STOCK_SOURCE = savedSrc;
+  delete require.cache[require.resolve('./netlify/functions/_stock.js')];
+
+  // 🔑 The price now comes from CATALOG — the same line the server charges
+  // from — so what a customer sees and what they are charged cannot drift.
+  ok('the price is the catalogue price', feed['retatrutide-10mg'].price, CATALOG['retatrutide-10mg'].price);
+  const mismatched = ids.filter((id) => feed[id].price !== CATALOG[id].price);
+  ok('🚨 no product is published at a price the server would not charge', mismatched, []);
+
+  if (saved.t) process.env.SQUARE_ACCESS_TOKEN = saved.t;
+  if (saved.l) process.env.SQUARE_LOCATION_ID = saved.l;
+  delete require.cache[require.resolve('./netlify/functions/get-inventory.js')];
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);
