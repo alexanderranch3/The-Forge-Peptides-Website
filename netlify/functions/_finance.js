@@ -48,6 +48,19 @@ function nyDate(iso) {
   return NY.format(d);            // 'YYYY-MM-DD'
 }
 
+// 🚨 A DATE COLUMN IS NOT A MOMENT, and nyDate() must never touch one.
+// purchase_orders.ordered_on is a plain calendar date; PostgREST returns it as
+// bare 'YYYY-MM-DD'. Feeding that to nyDate() parses it as UTC midnight and then
+// renders it in New York — five hours earlier, so the DAY BEFORE. Every supplier
+// order would have shown one day early (#410255 as 27 April, not the 28th) and
+// every window boundary would have been off by one. A plain date is already the
+// local date and is passed straight through; only a timestamp needs converting.
+function plainDate(v) {
+  if (!v) return null;
+  const s = String(v);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : nyDate(s);
+}
+
 // 'YYYY-MM-DD' arithmetic done as UTC midnight. Safe because the result is only
 // ever compared against other local-date strings — it is never converted back
 // into a moment, so no daylight-saving hour can shift it.
@@ -361,6 +374,71 @@ function summarise(sources, { period = 'all', now = new Date() } = {}) {
     rows: houseRows,
   };
 
+  // ── Supplier spend ────────────────────────────────────────────────────────
+  // 🚨 THIS IS NOT AN EXPENSE OF THE PERIOD AND MUST NEVER BE SUBTRACTED FROM
+  // THE PROFIT ABOVE. Buying stock converts cash into inventory; it becomes a
+  // cost only when a vial sells, which is what COGS already counts. A business
+  // that spent $17k on stock and sold half of it has not lost money. The page
+  // states this in words beside the figure, because a big number sitting near
+  // "profit" will otherwise be read as one.
+  //
+  // 🔑 The window is ordered_on, not received_on — that is when the money left.
+  // ⚠️ Several of these orders are a historical backfill (migration 041) whose
+  // real delivery dates were never recorded, which is a second reason not to
+  // window on receipt.
+  const purchases = (sources.purchases || []).map((r) => ({
+    ...r, _date: plainDate(r.ordered_on || r.received_on),
+  }));
+  const poScoped = purchases.filter((r) => inWindow(r._date, win.from, win.to));
+
+  const poRow = (r) => ({
+    reference: r.reference || null,
+    vendor: r.vendor_name || null,
+    ordered_on: r._date,
+    total_cents: int(r.invoice_total_cents) || 0,
+    goods_cents: int(r.goods_cents) || 0,
+    units: int(r.units_received) || 0,
+    state: r.state || null,
+  });
+
+  const byVendor = new Map();
+  for (const r of poScoped) {
+    const key = r.vendor_name || 'Unknown vendor';
+    const row = byVendor.get(key) || { vendor: key, orders: 0, units: 0, spend_cents: 0 };
+    row.orders += 1;
+    row.units += int(r.units_received) || 0;
+    row.spend_cents += int(r.invoice_total_cents) || 0;
+    byVendor.set(key, row);
+  }
+
+  const sum = (rows, f) => rows.reduce((n, r) => n + (int(f(r)) || 0), 0);
+
+  // 🔑 What was PAID and what becomes a vial's COST are not the same number,
+  // and the gap is not a rounding error — it is two specific things:
+  //   * tax and QA/COA fees are paid but deliberately never reach per-vial cost
+  //     (migration 024 — the COA was once expensed AND capitalised, the same
+  //     money counted twice);
+  //   * labels are the reverse: a real per-vial cost bought from a different
+  //     supplier, so they are in the cost basis and on nobody's invoice here.
+  // Naming both is what stops someone reconciling this by hand and concluding
+  // the books are wrong.
+  const outsideCost = sum(poScoped, (r) => r.tax_cents) + sum(poScoped, (r) => r.qa_fees_cents);
+
+  const supplier = {
+    orders: poScoped.length,
+    spend_cents: sum(poScoped, (r) => r.invoice_total_cents),
+    goods_cents: sum(poScoped, (r) => r.goods_cents),
+    units: sum(poScoped, (r) => r.units_received),
+    // Paid, but never part of a vial's cost basis.
+    outside_cost_basis_cents: outsideCost,
+    tax_cents: sum(poScoped, (r) => r.tax_cents),
+    qa_fees_cents: sum(poScoped, (r) => r.qa_fees_cents),
+    all_time_cents: sum(purchases, (r) => r.invoice_total_cents),
+    all_time_units: sum(purchases, (r) => r.units_received),
+    by_vendor: [...byVendor.values()].sort((a, b) => b.spend_cents - a.spend_cents),
+    rows: poScoped.map(poRow).sort((a, b) => String(b.ordered_on).localeCompare(String(a.ordered_on))),
+  };
+
   return {
     window: {
       period: win.period, label: win.label,
@@ -373,10 +451,11 @@ function summarise(sources, { period = 'all', now = new Date() } = {}) {
     products,
     channels,
     cash,
+    supplier,
     house_accounts: houseAccounts,
   };
 }
 
 module.exports = {
-  summarise, resolvePeriod, nyDate, shiftDays, daysBetween, change, monthLabel, PERIODS,
+  summarise, resolvePeriod, nyDate, plainDate, shiftDays, daysBetween, change, monthLabel, PERIODS,
 };

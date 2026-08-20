@@ -102,7 +102,7 @@ exports.handler = async (event) => {
   const period = Object.prototype.hasOwnProperty.call(PERIODS, asked) ? asked : 'all';
 
   try {
-    const [sales, orders, tenders, variants, products, house] = await Promise.all([
+    const [sales, orders, tenders, variants, products, house, purchases] = await Promise.all([
       // The books. One row per sold PRODUCT line, already carrying revenue,
       // COGS and profit — and already excluding cancelled and untendered orders.
       sbAll('v_product_sales?select=order_id,order_no,placed_at,channel,variant_id,name_at_sale,quantity,revenue_cents,gross_collected_cents,sales_tax_cents,cogs_cents,profit_cents&order=placed_at.asc'),
@@ -115,9 +115,14 @@ exports.handler = async (event) => {
       sbAll('variants?select=id,name,product_id'),
       sbAll('products?select=id,name'),
       sbAll('v_house_account_balance?select=party_id,display_name,charged_cents,paid_cents,balance_cents,payment_count,last_charge_at'),
+      // Supplier spend. 🚨 This is cash converted into inventory, NOT an expense
+      // of the period — _finance.js keeps it well away from the profit figure.
+      // Only RECEIVED orders count: a DRAFT or ORDERED one is a plan, and
+      // reporting a plan as money spent is how a forecast becomes a fact.
+      sbAll('v_purchase_orders?select=id,reference,vendor_name,state,ordered_on,received_on,goods_cents,invoice_total_cents,tax_cents,qa_fees_cents,units_received&state=eq.RECEIVED&order=ordered_on.asc'),
     ]);
 
-    const payload = summarise({ sales, orders, tenders, variants, products, house }, { period });
+    const payload = summarise({ sales, orders, tenders, variants, products, house, purchases }, { period });
 
     return {
       statusCode: 200, headers,

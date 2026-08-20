@@ -1152,6 +1152,24 @@
         <tbody id="fin-channels-body"></tbody>
       </table>
     </div>
+
+    <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">What you paid suppliers</h2>
+    <!-- 🚨 The wording here is load-bearing. This figure sits on the same page as
+         Profit, and a big number near profit gets read as a cost. Buying stock
+         converts cash into inventory; it becomes a cost only when a vial sells,
+         which is what COGS already counts. -->
+    <p class="sub-note" id="fin-supplier-lede"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ordered</th><th>Vendor</th><th>Invoice</th>
+          <th class="num">Vials</th><th class="num">Goods</th><th class="num">Invoice total</th>
+        </tr></thead>
+        <tbody id="fin-supplier-body"></tbody>
+      </table>
+    </div>
+    <div id="fin-supplier-none" class="no-orders" style="display:none;">No supplier orders in this period.</div>
+    <p class="sub-note" id="fin-supplier-note" style="margin-top:10px;"></p>
   </div>
 </div>
 
@@ -4331,9 +4349,10 @@ function renderFinance(d) {
     notes.push(`<span class="dim">🗑️</span> ${c.voided.orders} voided order${c.voided.orders === 1 ? '' : 's'}
       worth ${money2(c.voided.amount_cents)} are excluded entirely, along with any tender on them.`);
   }
-  notes.push(`<span class="dim">ℹ️</span> Cost of goods here is the <b>landed cost of what sold</b>. It is not
-    what you spent this period — inventory bought and not yet sold is on the <b>Inventory</b> tab, and this
-    tab carries no operating expenses at all, so gross profit is not take-home.`);
+  notes.push(`<span class="dim">ℹ️</span> Cost of goods here is the <b>landed cost of what sold</b>, not what
+    you spent. What you paid suppliers is its own block at the foot of this tab, and the two are not the same
+    number: stock bought and not yet sold is inventory, not a cost. This tab still carries <b>no operating
+    expenses at all</b>, so gross profit is not take-home.`);
   document.getElementById('fin-money-note').innerHTML = notes.join('<br><br>');
 
   // ── Products ──────────────────────────────────────────────────────────────
@@ -4362,6 +4381,53 @@ function renderFinance(d) {
       <td class="num">${finPct(ch.margin_pct)}</td>
       <td class="num">${money2(ch.avg_order_cents)}</td>
     </tr>`).join('');
+
+  // ── Supplier spend ────────────────────────────────────────────────────────
+  // 🚨 Cash converted into inventory, NOT an expense of the period. It is
+  // deliberately the last block on the tab and it says what it is not, twice,
+  // because a five-figure number next to Profit invites exactly one wrong
+  // reading and nothing else on this page corrects it.
+  const sup = d.supplier || { orders: 0, rows: [], by_vendor: [] };
+  const supRows = sup.rows || [];
+
+  document.getElementById('fin-supplier-lede').innerHTML = sup.orders
+    ? `<b>${money2(sup.spend_cents)}</b> across ${sup.orders} supplier order${sup.orders === 1 ? '' : 's'}
+       and ${sup.units} vial${sup.units === 1 ? '' : 's'} in this period.
+       <b>This is not subtracted from the profit above, and it should not be.</b>
+       Buying stock turns cash into inventory — it becomes a cost when a vial
+       <i>sells</i>, which is what the Cost figure already counts.`
+    : `No supplier orders in this period.`;
+
+  document.getElementById('fin-supplier-body').innerHTML = supRows.map(r => `<tr>
+      <td class="dim">${esc(r.ordered_on || '')}</td>
+      <td><strong>${esc(r.vendor || '')}</strong></td>
+      <td>${esc(r.reference || '')}</td>
+      <td class="num">${r.units}</td>
+      <td class="num">${money2(r.goods_cents)}</td>
+      <td class="num"><strong>${money2(r.total_cents)}</strong></td>
+    </tr>`).join('');
+  document.getElementById('fin-supplier-none').style.display = supRows.length ? 'none' : 'block';
+
+  const supNotes = [];
+  if ((sup.by_vendor || []).length > 1) {
+    supNotes.push((sup.by_vendor || []).map(v =>
+      `<b>${esc(v.vendor)}</b> ${money2(v.spend_cents)} (${v.units} vials)`).join(' · '));
+  }
+  // 🔑 What was PAID and what a vial COSTS differ by two named things, not by a
+  // rounding error. Saying so is what stops someone reconciling this by hand,
+  // failing, and concluding the books are wrong.
+  if (sup.outside_cost_basis_cents) {
+    supNotes.push(`<span class="dim">ℹ️</span> <b>${money2(sup.outside_cost_basis_cents)}</b> of that is
+      sales tax (${money2(sup.tax_cents)}) and COA testing fees (${money2(sup.qa_fees_cents)}), which are paid
+      but deliberately <b>never</b> part of a vial's cost — a COA fee that is both expensed and built into
+      the vial is the same money counted twice. Vial labels run the other way: a real per-vial cost, bought
+      from a different supplier, so they are in the cost basis and on none of the invoices here.`);
+  }
+  if (sup.all_time_cents && sup.all_time_cents !== sup.spend_cents) {
+    supNotes.push(`<span class="dim">📒</span> All time: <b>${money2(sup.all_time_cents)}</b> across
+      ${sup.all_time_units} vials.`);
+  }
+  document.getElementById('fin-supplier-note').innerHTML = supNotes.join('<br><br>');
 }
 
 function showToast(msg) {

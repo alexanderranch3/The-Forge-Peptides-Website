@@ -118,7 +118,21 @@ const house = [
     balance_cents: '0', payment_count: 1, last_charge_at: '2026-06-05T15:05:00Z' },
 ];
 
-const bundle = { sales, orders, tenders, variants, products, house };
+// Supplier purchases. 🚨 The point of these rows in this test is that NONE of
+// them may reach revenue, COGS or profit — buying stock is not an expense.
+const purchases = [
+  { id: 'po-1', reference: '410255', vendor_name: 'Simple Peptide Wholesale', state: 'RECEIVED',
+    ordered_on: '2026-04-28', received_on: '2026-04-28', goods_cents: '238500',
+    invoice_total_cents: '274982', tax_cents: '16152', qa_fees_cents: '0', units_received: '60' },
+  { id: 'po-2', reference: '2675', vendor_name: 'Direct Peptides', state: 'RECEIVED',
+    ordered_on: '2026-07-23', received_on: '2026-07-23', goods_cents: '84500',
+    invoice_total_cents: '91300', tax_cents: '0', qa_fees_cents: '5000', units_received: '50' },
+  { id: 'po-3', reference: '3946', vendor_name: 'Direct Peptides', state: 'RECEIVED',
+    ordered_on: '2026-08-10', received_on: '2026-08-13', goods_cents: '116000',
+    invoice_total_cents: '125300', tax_cents: '0', qa_fees_cents: '7500', units_received: '80' },
+];
+
+const bundle = { sales, orders, tenders, variants, products, house, purchases };
 const all = F.summarise(bundle, { period: 'all', now: NOW });
 
 console.log('\n— headline totals are the view\'s figures, added up —');
@@ -239,7 +253,7 @@ ok('settled tabs drop off', all.house_accounts.rows.map((r) => r.name), ['Leo th
 ok('payments recorded is visible', all.house_accounts.payments_recorded, 0);
 
 console.log('\n— an empty business does not divide by zero —');
-const empty = F.summarise({ sales: [], orders: [], tenders: [], variants: [], products: [], house: [] }, { period: '30', now: NOW });
+const empty = F.summarise({ sales: [], orders: [], tenders: [], variants: [], products: [], house: [], purchases: [] }, { period: '30', now: NOW });
 ok('no revenue',   empty.totals.revenue_cents, 0);
 ok('no margin',    empty.totals.margin_pct, null);
 ok('no average',   empty.totals.avg_order_cents, 0);
@@ -286,6 +300,7 @@ function defaultRoutes() {
     'variants?select': { status: 200, body: variants },
     'products?select': { status: 200, body: products },
     'v_house_account_balance': { status: 200, body: house },
+    'v_purchase_orders': { status: 200, body: purchases },
   };
 }
 
@@ -352,6 +367,64 @@ routes = defaultRoutes();
 res = await unconfigured.handler({ headers: { authorization: `Bearer ${TOKEN}` }, queryStringParameters: null });
 ok('unconfigured Supabase is an error, not an empty page', res.statusCode, 500);
 okTrue('and it says where to set it', /Environment variables/.test(JSON.parse(res.body).detail));
+
+
+console.log('\n— supplier spend is reported, and kept away from profit —');
+// 🚨 The whole risk of this block: a five-figure number landing next to Profit
+// and being read as a cost. These assertions exist so that if anyone ever wires
+// spend into the P&L, the test says so rather than the tab quietly lying.
+okTrue('the headline figures do not know purchases exist',
+  all.totals.revenue_cents === 32000 + 16000 + 10000);
+ok('🚨 buying stock did not change COGS', all.totals.cogs_cents,
+  F.summarise({ ...bundle, purchases: [] }, { period: 'all', now: NOW }).totals.cogs_cents);
+ok('🚨 buying stock did not change profit', all.totals.profit_cents,
+  F.summarise({ ...bundle, purchases: [] }, { period: 'all', now: NOW }).totals.profit_cents);
+ok('🚨 and it is nowhere in the cash bridge', all.cash.order_total_cents,
+  F.summarise({ ...bundle, purchases: [] }, { period: 'all', now: NOW }).cash.order_total_cents);
+
+ok('all three orders are counted', all.supplier.orders, 3);
+ok('spend is the invoice totals', all.supplier.spend_cents, 274982 + 91300 + 125300);
+ok('vials bought',                all.supplier.units, 190);
+ok('goods, separately from the invoice total', all.supplier.goods_cents, 238500 + 84500 + 116000);
+
+// Paid, but never part of a vial's cost: sales tax and COA fees.
+ok('tax + QA is stated on its own', all.supplier.outside_cost_basis_cents, 16152 + 5000 + 7500);
+ok('   tax',  all.supplier.tax_cents, 16152);
+ok('   COA',  all.supplier.qa_fees_cents, 5000 + 7500);
+
+ok('vendors are rolled up', all.supplier.by_vendor.length, 2);
+ok('   biggest vendor first', all.supplier.by_vendor[0].vendor, 'Simple Peptide Wholesale');
+ok('   Direct is summed across its two orders',
+  all.supplier.by_vendor.find(v => v.vendor === 'Direct Peptides').spend_cents, 91300 + 125300);
+
+// 🔑 Windowed on ordered_on — when the money left — not received_on. Several of
+// these orders are a historical backfill whose delivery dates were never
+// recorded, so received_on is not a fact to window on.
+const sup30 = F.summarise(bundle, { period: '30', now: NOW });
+ok('the 30-day window drops April and keeps the two summer orders', sup30.supplier.orders, 2);
+ok('   newest first', sup30.supplier.rows[0].reference, '3946');
+
+// 🚨 ordered_on is a DATE column, not a timestamp. Running a bare 'YYYY-MM-DD'
+// through nyDate() parses it as UTC midnight and renders it in New York — the
+// day BEFORE. This caught #3946 displaying as 9 August. plainDate() passes a
+// plain date straight through; these two assertions are the guard.
+ok('🚨 a plain date is not shifted by a timezone', F.plainDate('2026-08-10'), '2026-08-10');
+ok('🚨 but a real timestamp still converts',       F.plainDate('2026-08-10T02:00:00Z'), '2026-08-09');
+ok('   so the order shows the date on the invoice', sup30.supplier.rows[0].ordered_on, '2026-08-10');
+ok('   and April\'s does too',
+  all.supplier.rows.find(r => r.reference === '410255').ordered_on, '2026-04-28');
+ok('all-time stays whole whatever the window', sup30.supplier.all_time_cents,
+  274982 + 91300 + 125300);
+
+ok('a period with no purchases reports zero, not a crash', empty.supplier.orders, 0);
+ok('   with an empty row list',                            empty.supplier.rows.length, 0);
+const noKey = F.summarise({ sales: [], orders: [], tenders: [], variants: [], products: [], house: [] },
+  { period: 'all', now: NOW });
+ok('🚨 a bundle with no purchases key at all still answers', noKey.supplier.spend_cents, 0);
+
+// Only RECEIVED orders are fetched — a DRAFT is a plan, not money spent.
+okTrue('the endpoint asks Supabase for RECEIVED purchase orders only',
+  calls.some(u => u.includes('v_purchase_orders') && u.includes('state=eq.RECEIVED')));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);
