@@ -116,6 +116,7 @@ async function fetchCustomers(customerIds) {
 // The same packing identity the invoice prints, so the two never disagree
 // about which vial a line means.
 const { packingLine } = require('./_catalog');
+const { fetchAliasLines, packingLineFor } = require('./_alias-skus');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -163,8 +164,13 @@ async function fetchCancelledSquareIds() {
 
 // Orders that exist only here. Shaped to match a Square order exactly so the UI
 // never has to care which system a sale came from.
-async function fetchDashboardOnlyOrders(since) {
-  const rows = await sb(`v_dashboard_only_orders?select=*&created_at=gte.${since.toISOString()}`);
+async function fetchDashboardOnlyOrders(since, aliasLinesPromise) {
+  // Both are started by the caller and awaited here, so the alias lookup costs
+  // no extra round trip — it runs alongside the order fetch, not after it.
+  const [rows, aliasLines] = await Promise.all([
+    sb(`v_dashboard_only_orders?select=*&created_at=gte.${since.toISOString()}`),
+    aliasLinesPromise,
+  ]);
   if (!rows) return [];
   return rows.map((r) => ({
     orderId:          r.order_id,
@@ -189,7 +195,11 @@ async function fetchDashboardOnlyOrders(since) {
     // Counter sales carry the dashboard's own variant name; run it through the
     // same resolver so a walk-in order reads identically to a web one.
     items: (Array.isArray(r.items) ? r.items : []).map((i) => {
-      const { sku, label } = packingLine(i.name);
+      // 🔑 The database's own resolution first, this file's name parsing second
+      // — `packingLine` already prefers the id it is handed. See _alias-skus.js:
+      // the alias is what deducted the stock, so the SKU on the slip names the
+      // vial that actually left the shelf.
+      const { sku, label } = packingLineFor(aliasLines, i.name);
       return { ...i, name: label, sku };
     }),
     subtotal:         Number(r.subtotal || 0),
@@ -252,11 +262,16 @@ exports.handler = async (event) => {
 
     // Square, the dashboard's own orders, and fulfillment state — in parallel,
     // since none depends on another.
-    const [orders, dashboardOnly, fulfillmentMap, cancelledIds] = await Promise.all([
+    // Started here so both the Square path and the dashboard path share one
+    // lookup, and it overlaps every other request rather than following them.
+    const aliasLinesPromise = fetchAliasLines();
+
+    const [orders, dashboardOnly, fulfillmentMap, cancelledIds, aliasLines] = await Promise.all([
       fetchOrders(since),
-      fetchDashboardOnlyOrders(since),
+      fetchDashboardOnlyOrders(since, aliasLinesPromise),
       fetchFulfillmentBySquareId(),
       fetchCancelledSquareIds(),
+      aliasLinesPromise,
     ]);
 
     // 🚨 NOT an early return on an empty Square list any more. Counter sales
@@ -293,10 +308,15 @@ exports.handler = async (event) => {
       const items = (order.line_items || [])
         .filter(li => !li.name?.toLowerCase().startsWith('shipping'))
         .map(li => {
-          // 🔑 The specific name and the SKU, resolved the same way the invoice
-          // resolves them. Frank packs from this list, so "Wolverine Stack" with
-          // no strength on it is a mis-pack waiting to happen.
-          const { sku, label } = packingLine(li.name);
+          // 🔑 The specific name and the SKU. Frank packs from this list, so
+          // "Wolverine Stack" with no strength on it is a mis-pack waiting to
+          // happen — and a Square-era name like
+          // `BPC-157 / TB-500 "WOLVERINE BLEND"` carries no strength at all.
+          // 🚨 The database is asked FIRST: `resolve_variant()` already matched
+          // this exact string to decide which vial to deduct, so the alias table
+          // knows what the parser correctly refuses to guess. 88 of 136 sold
+          // lines printed bare before this. See _alias-skus.js.
+          const { sku, label } = packingLineFor(aliasLines, li.name);
           return {
             name:  label,
             sku,
