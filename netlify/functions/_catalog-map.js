@@ -17,7 +17,22 @@
 // costs the wrong money. That is not hypothetical: a wildcard match on
 // "BPC-157 (10mg)" once resolved to the Wolverine 10/10 BLEND.
 
-function nameToId(name) {
+const { CATALOG } = require('./_catalog');
+
+// 🚨 A NAME MUST NEVER RESOLVE TO A PRODUCT THE CATALOGUE NO LONGER SELLS.
+// Retiring a product is done by deleting its CATALOG entry — that is what takes
+// it off the shop. Every rule below is a hand-written string match, so a retired
+// id would go on being returned by whichever rule mentions it, and the caller
+// would get an id that resolves to nothing: create-invoice throws "No product
+// record", and the watchdog reports the variant as "sold by name matching
+// alone". Retiring the old Phoenix 10/5 on 2026-08-20 hit exactly that.
+//
+// 🔑 So the guard is here, once, rather than as a hand-edit to the rules each
+// time. CATALOG is the single fact about what is sold; this file now defers to
+// it, and a future retirement needs no second file remembered.
+// ⚠️ The direction of the dependency matters: _catalog.js has its own exact-match
+// idForName() and does NOT require this file, so there is no cycle.
+function resolve(name) {
   const n = name.toLowerCase();
 
   // ── Blends first ─────────────────────────────────────────────────────────
@@ -94,6 +109,14 @@ function nameToId(name) {
   if (n.includes('bacteriostatic') || n.includes('bac water') || n.includes('reconstitution')) return 'reconstitution-liquid-30ml';
 
   return null;
+}
+
+function nameToId(name) {
+  const id = resolve(name);
+  // Null is a real answer, and the right one here: a null falls back to whatever
+  // the pinned row or the database alias says, while a dead id names a product
+  // that cannot be bought at any price.
+  return id && CATALOG[id] ? id : null;
 }
 
 module.exports = { nameToId };

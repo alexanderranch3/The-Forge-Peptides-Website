@@ -55,7 +55,10 @@ for (const [n, want] of [
   ['Retatrutide 10mg','retatrutide-10mg'], ['Retatrutide 15mg','retatrutide-15mg'],
   ['Tesamorelin 10mg','tesamorelin-10mg'],
   ['Ipamorelin 10mg','ipamorelin-10mg'],   ['Sermorelin 10mg','sermorelin-10mg'],
-  ['TESAMORELIN/IPAMORELIN PHOENIX BLEND','phoenix-blend'],
+  // 🗄️ Was 'phoenix-blend' until that product was retired 2026-08-20. Now null —
+  // asserted properly in the retirement section at the foot of this file, where
+  // the reasoning lives.
+  ['TESAMORELIN/IPAMORELIN PHOENIX BLEND', null],
   ['Phoenix Blend (New Formula)','phoenix-blend-12-2'],
   ['CJC-1295 / Ipamorelin (No DAC)','cjc1295-ipamorelin'],
   ['GHK-Cu 50mg','ghk-cu-50mg'],  ['GHK-Cu 100mg','ghk-cu-100mg'],
@@ -75,6 +78,36 @@ ok('semax / selank 5mg/5mg', null);
 ok('Selank / Semax blend', null);
 ok('Semax 10mg', 'semax-10mg');
 ok('Selank 10mg', 'selank-10mg');
+
+// ── 🚨 A retired product's name must stop resolving ─────────────────────────
+// Retiring is done by deleting the CATALOG entry. Every rule in nameToId is a
+// hand-written string match, so without the guard the rule mentioning the
+// retired id keeps firing and hands callers an id that resolves to nothing —
+// create-invoice throws "No product record", and the watchdog reports the
+// variant as sold "by name matching alone". This is what the old Phoenix 10/5
+// did on 2026-08-20.
+console.log('\n— a retired name resolves to nothing, not to a dead id —');
+ok('TESAMORELIN / IPAMORELIN "PHOENIX BLEND"', null);
+ok('Phoenix Blend', null);
+ok('Phoenix Blend (10mg/5mg)', null);
+// 🚨 And it must NOT quietly become the formula that replaced it. Two different
+// vials, both $155, so nothing downstream could catch the substitution.
+ok('Phoenix Blend (12mg/2mg)', 'phoenix-blend-12-2');
+ok('Tesamorelin/Ipamorelin 12/2', 'phoenix-blend-12-2');
+
+// 🔑 The guard is general, not a special case for Phoenix: nothing nameToId
+// returns may be missing from CATALOG, so the next retirement needs no edit here.
+{
+  const { CATALOG } = await import('./netlify/functions/_catalog.js').then(m => m.default || m);
+  const names = ['Glow Blend', 'KLOW Blend', 'Retatrutide 10mg', 'Retatrutide 15mg',
+                 'Retatrutide 30mg', 'BPC-157 (10mg)', 'MOTS-C 10MG', 'NAD+ 500mg',
+                 'Sermorelin 10mg', 'Tesamorelin 10mg', 'Melanotan II 10MG', 'DSIP 5MG'];
+  const dead = names.map((n) => nameToId(n)).filter((id) => id && !CATALOG[id]);
+  const good = (() => { const c = dead.length === 0;
+    console.log(`  ${c ? 'PASS' : 'FAIL'}  🚨 no name resolves to an id CATALOG lacks${c ? '' : '  ' + JSON.stringify(dead)}`);
+    return c; })();
+  good ? pass++ : fail++;
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
