@@ -68,11 +68,22 @@ global.fetch = async (url) => {
 
 const ALIASES = [
   // The Square-era names that used to print bare.
-  { alias_norm: 'tesamorelin ipamorelin phoenix blend', variants: { site_catalog_id: 'phoenix-blend', sku: null } },
-  { alias_norm: 'phoenix blend',                        variants: { site_catalog_id: 'phoenix-blend', sku: null } },
+  { alias_norm: 'tesamorelin ipamorelin phoenix blend', variants: { site_catalog_id: null, sku: 'PHX-10-5' } },
+  // 🚨 PINNED: bare "Phoenix Blend" is the ORIGINAL 10/5 — Frank settled that on
+  // 2026-08-20 (5 vials, 19 Jun – 9 Jul, all $155; both formulas cost $155 so
+  // price could not separate them). Retiring the 10/5 must not quietly hand
+  // those five lines the New Formula's SKU, so it points at the same retired
+  // variant as the other two aliases do.
+  { alias_norm: 'phoenix blend',                        variants: { site_catalog_id: null, sku: 'PHX-10-5' } },
   { alias_norm: 'phoenix blend new formula',            variants: { site_catalog_id: 'phoenix-blend-12-2', sku: null } },
   { alias_norm: 'bpc 157 tb 500 wolverine blend',       variants: { site_catalog_id: 'wolverine-stack', sku: null } },
   { alias_norm: 'ghk cu bpc 157 tb 500 glow blend',     variants: { site_catalog_id: 'glow-blend', sku: null } },
+  // 🚨 THE MID-DEPLOY STATE, and the reason migration 046 exists. Between the
+  // code deploy that drops a product from CATALOG and the migration that clears
+  // its site_catalog_id, a row looks like this: a site id that CATALOG no longer
+  // knows, plus the SKU armed on the variant. It must fall through to the SKU
+  // rather than losing it — 24 historical Phoenix lines depend on that.
+  { alias_norm: 'phoenix blend 10mg 5mg',               variants: { site_catalog_id: 'phoenix-blend', sku: 'PHX-10-5' } },
   // Retired: absent from CATALOG on purpose, carrying its SKU on the variant
   // instead (migration 030).
   { alias_norm: 'retatrutide 12mg',                     variants: { site_catalog_id: null, sku: 'RETA-12' } },
@@ -86,12 +97,18 @@ routes = { 'variant_aliases': { status: 200, body: ALIASES } };
 let map = await fetchAliasLines();
 
 console.log('\n— the map only carries what can actually yield a SKU —');
-ok('a Square-era blend resolves', map.get('tesamorelin ipamorelin phoenix blend').sku, CATALOG['phoenix-blend'].sku);
+// The old Phoenix is retired now, so this Square-era alias takes the same route
+// Retatrutide 12mg does: no catalogue entry, SKU off the variant.
+ok('a retired Square-era blend keeps its SKU',
+   map.get('tesamorelin ipamorelin phoenix blend'), { sku: 'PHX-10-5', label: null });
+ok('🚨 and so does one still carrying a stale site id mid-deploy',
+   map.get('phoenix blend 10mg 5mg'), { sku: 'PHX-10-5', label: null });
 ok('so does a Wolverine',        map.get('bpc 157 tb 500 wolverine blend').sku, CATALOG['wolverine-stack'].sku);
 ok('a retired product uses variants.sku', map.get('retatrutide 12mg'), { sku: 'RETA-12', label: null });
 ok('no site id and no sku is dropped',    map.has('never skued'), false);
 ok('a row with no variant is dropped',    map.has('orphan'), false);
-ok('six usable entries',                  map.size, 6);
+// Every fixture row that can yield a SKU, and none of the two that cannot.
+ok('seven usable entries, and only those',  map.size, 7);
 
 console.log('\n— 🚨 the whole point: the names the parser refuses now carry a SKU —');
 // nameToId() is RIGHT to refuse these — "WOLVERINE BLEND" with no strength is
@@ -104,8 +121,13 @@ ok('but the packing line gets a SKU',   line('BPC-157 / TB-500 "WOLVERINE BLEND"
   CATALOG['wolverine-stack'].sku);
 ok('and the specific label',            line('BPC-157 / TB-500 "WOLVERINE BLEND"').label,
   CATALOG['wolverine-stack'].label);
-ok('Phoenix, the 16-line offender',     line('TESAMORELIN / IPAMORELIN "PHOENIX BLEND"').sku,
-  CATALOG['phoenix-blend'].sku);
+// 🚨 Phoenix, the 16-line offender — and now RETIRED, so this is the case that
+// matters most: the catalogue has nothing to say and the SKU comes from the
+// database. If this ever returns null, 24 historical packing lines went blank.
+ok('Phoenix, the 16-line offender, retired but still SKU\'d',
+  line('TESAMORELIN / IPAMORELIN "PHOENIX BLEND"').sku, 'PHX-10-5');
+ok('   and it keeps the name it was sold under',
+  line('TESAMORELIN / IPAMORELIN "PHOENIX BLEND"').label, 'TESAMORELIN / IPAMORELIN "PHOENIX BLEND"');
 ok('Glow',                              line('GHK-CU / BPC-157 / TB-500 "GLOW BLEND"').sku,
   CATALOG['glow-blend'].sku);
 

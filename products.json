@@ -48,25 +48,24 @@
       "alternateName": ["Tesamorelin Ipamorelin blend", "GH axis research formula", "GHRH GHRP blend"],
       "image": "assets/phoenix-blend-vial.webp",
       "title": "Buy Phoenix Blend (Tesamorelin + Ipamorelin) | The Forge Peptides",
-      "metaDescription": "Phoenix Blend pairs Tesamorelin (GRF 1-44 analog) with Ipamorelin (GHS-R1a agonist) in two ratio configurations for GH-axis research. ≥98% HPLC purity. For research use only.",
+      "metaDescription": "Phoenix Blend pairs Tesamorelin 12mg (GRF 1-44 analog) with Ipamorelin 2mg (GHS-R1a agonist) for GH-axis research. ≥98% HPLC purity. For research use only.",
       "sizes": [
-        { "id": "phoenix-blend", "label": "10mg / 5mg", "price": 155 },
         { "id": "phoenix-blend-12-2", "label": "12mg / 2mg", "price": 155 }
       ],
-      "schemaDescription": "Dual-mechanism GH axis research formula. Available in two ratio configurations: Tesamorelin 10mg + Ipamorelin 5mg and Tesamorelin 12mg + Ipamorelin 2mg. Tesamorelin (GRF(1-44)-NH2 analog) targets visceral adipose reduction pathways while Ipamorelin (GHS-R1a selective agonist) provides clean GH pulse stimulation without cortisol or prolactin interference. For in-vitro research use only.",
+      "schemaDescription": "Dual-mechanism GH axis research formula: Tesamorelin 12mg + Ipamorelin 2mg. Tesamorelin (GRF(1-44)-NH2 analog) targets visceral adipose reduction pathways while Ipamorelin (GHS-R1a selective agonist) provides clean GH pulse stimulation without cortisol or prolactin interference. For in-vitro research use only.",
       "summary": [
         "Phoenix Blend is a dual-mechanism growth-hormone-axis research formula that combines two complementary peptides in a single vial. Tesamorelin, a GRF(1-44)-NH2 analog, and Ipamorelin, a selective GHS-R1a agonist, act on different points of the GH axis — pairing a GHRH-analog mechanism with a selective secretagogue mechanism so researchers can study the two together rather than sourcing and combining them separately.",
         "In research models, Tesamorelin is examined for its role in stimulating endogenous GH secretion and in visceral adipose reduction pathways, while Ipamorelin is studied for clean GH pulse stimulation without the cortisol or prolactin interference seen with some other secretagogues. Investigators use the pairing to explore how a GHRH-analog and a selective GHS-R1a agonist behave in combination within in-vitro systems. All material is intended strictly for in-vitro laboratory research.",
-        "The blend is offered in two ratio configurations — Tesamorelin 10mg with Ipamorelin 5mg, and Tesamorelin 12mg with Ipamorelin 2mg — so a study can select the compound ratio that matches its design instead of reconstituting two vials to approximate it. Both configurations are lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request. Store vials cool, dry, and away from direct light; refrigerate for longer-term storage and avoid repeated temperature swings."
+        "The blend carries Tesamorelin 12mg with Ipamorelin 2mg in a single vial, so a study gets that ratio without reconstituting two vials to approximate it. Both configurations are lyophilized and third-party lab tested at ≥98% purity by HPLC, with a Certificate of Analysis available on request. Store vials cool, dry, and away from direct light; refrigerate for longer-term storage and avoid repeated temperature swings."
       ],
       "specs": [
         { "k": "Purity", "v": "≥98% HPLC" },
         { "k": "Form", "v": "Lyophilized powder" },
-        { "k": "Configurations", "v": "10/5mg or 12/2mg" },
+        { "k": "Configuration", "v": "12/2mg" },
         { "k": "Testing", "v": "Third-party lab verified" }
       ],
       "faq": [
-        { "q": "What is the difference between the two Phoenix Blend configurations?", "a": "One vial carries Tesamorelin 10mg with Ipamorelin 5mg; the other carries Tesamorelin 12mg with Ipamorelin 2mg. Both are $155 — the choice is about the compound ratio a given research design calls for." },
+        { "q": "What ratio does Phoenix Blend carry?", "a": "Tesamorelin 12mg with Ipamorelin 2mg in a single vial, $155. An earlier 10mg/5mg configuration was discontinued." },
         { "q": "Why combine Tesamorelin and Ipamorelin in one formula?", "a": "The two act on different points of the GH axis — a GHRH analog and a selective GHS-R1a agonist — so pairing them lets researchers study the combination without sourcing and reconstituting two separate vials." },
         { "q": "Is a COA available for Phoenix Blend?", "a": "Yes. Both configurations are third-party lab tested at ≥98% purity by HPLC. Email alexanderranch3@gmail.com to request the Certificate of Analysis." }
       ]

@@ -65,7 +65,14 @@ const CATALOG = {
   'wolverine-stack':            { sku: 'WOLV-10-10',         price: 115, name: 'Wolverine Stack',                label: 'Wolverine Stack — BPC-157 10mg / TB-500 10mg' },
   'wolverine-blend-5mg':        { sku: 'WOLV-5-5',           price: 100, name: 'Wolverine Blend 5mg/5mg',        label: 'Wolverine Blend — BPC-157 5mg / TB-500 5mg' },
   'cjc1295-ipamorelin':         { sku: 'CJC-5-5',            price: 99,  name: 'CJC-1295 / Ipamorelin (No DAC)', label: 'CJC-1295 (No DAC) 5mg / Ipamorelin 5mg' },
-  'phoenix-blend':              { sku: 'PHX-10-5',           price: 155, name: 'Phoenix Blend (10mg/5mg)',       label: 'Phoenix Blend — Tesamorelin 10mg / Ipamorelin 5mg' },
+  // 🗄️ 'phoenix-blend' (the ORIGINAL Tesamorelin 10mg / Ipamorelin 5mg, PHX-10-5)
+  // was retired 2026-08-20 at Frank's request and removed from here, which is what
+  // takes it off the shop — CATALOG is what decides "sold on the site". Its SKU now
+  // lives on variants.sku (migration 046) so the 24 historical order lines that
+  // sold it keep printing PHX-10-5 on their packing lists. 24 lines of history, and
+  // the 12/2 New Formula below is a DIFFERENT VIAL — do not repoint the old name at
+  // it. To bring it back: restore this line and put site_catalog_id back on the
+  // variant, then clear variants.sku.
   'phoenix-blend-12-2':         { sku: 'PHX-12-2',           price: 155, name: 'Phoenix Blend (12mg/2mg)',       label: 'Phoenix Blend — Tesamorelin 12mg / Ipamorelin 2mg' },
   'glow-blend':                 { sku: 'GLOW-50-10-10',      price: 165, name: 'Glow Blend',                     label: 'Glow Blend — GHK-Cu 50mg / BPC-157 10mg / TB-500 10mg' },
   'klow-blend':                 { sku: 'KLOW-50-10-10-10',   price: 195, name: 'KLOW Blend',                     label: 'KLOW Blend — GHK-Cu 50mg / BPC-157 10mg / TB-500 10mg / KPV 10mg' },

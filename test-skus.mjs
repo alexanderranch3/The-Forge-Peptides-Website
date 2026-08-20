@@ -39,7 +39,9 @@ console.log('\n2. 🚨 the stored name is load-bearing and must not have moved')
     'wolverine-stack': 'Wolverine Stack',
     'wolverine-blend-5mg': 'Wolverine Blend 5mg/5mg',
     'cjc1295-ipamorelin': 'CJC-1295 / Ipamorelin (No DAC)',
-    'phoenix-blend': 'Phoenix Blend (10mg/5mg)',
+    // 🗄️ 'phoenix-blend' (the 10/5 original) was RETIRED 2026-08-20 and is
+    // deliberately gone from CATALOG — that removal is what took it off the shop.
+    // Its absence is asserted below rather than left as a hole in this list.
     'phoenix-blend-12-2': 'Phoenix Blend (12mg/2mg)',
     'glow-blend': 'Glow Blend',
     'klow-blend': 'KLOW Blend',
@@ -48,6 +50,17 @@ console.log('\n2. 🚨 the stored name is load-bearing and must not have moved')
   for (const [id, name] of Object.entries(PINNED)) {
     ok(`${id} keeps its Square name`, CATALOG[id].name, name);
   }
+
+  // 🚨 A retired product must leave CATALOG — that is the thing that stops the
+  // shop selling it — WITHOUT losing the SKU its historical orders print. The
+  // SKU moves to variants.sku instead (migrations 030 and 046), and
+  // test-alias-skus.mjs proves the packing line still finds it there.
+  ok('🗄️ the retired Phoenix 10/5 is out of the catalogue', CATALOG['phoenix-blend'], undefined);
+  ok('   and the New Formula it was replaced by is NOT', CATALOG['phoenix-blend-12-2'].sku, 'PHX-12-2');
+  // 🚨 The two are different vials at different strengths. Nothing may quietly
+  // repoint the old name at the surviving one.
+  ok('🚨 no catalogue entry claims the retired 10/5 composition',
+     Object.values(CATALOG).filter((e) => /10mg \/ Ipamorelin 5mg/.test(e.label || '')).length, 0);
   // And every name still resolves the way it did before SKUs existed. The one
   // exception is pre-existing: Square's naming genuinely cannot tell the two
   // Wolverines apart from "Wolverine Stack", and nameToId refuses to guess.
@@ -65,10 +78,16 @@ console.log('\n3. the labels say which vial to pack');
   // different price — nothing about them reads the same any more.
   okTrue('the two Wolverines are now unmistakable',
     packingLine('Wolverine Stack').sku !== packingLine('Wolverine Blend 5mg/5mg').sku);
-  okTrue('and so are the two Phoenixes',
+  // 🚨 The retired 10/5 must NOT borrow the surviving 12/2's SKU. Its old name
+  // now yields nothing from CATALOG — the database supplies PHX-10-5 instead
+  // (test-alias-skus.mjs) — and the one thing that must never happen is the two
+  // Phoenixes collapsing into one SKU on a packing list.
+  ok('the retired Phoenix name gets no SKU from the catalogue',
+     packingLine('Phoenix Blend (10mg/5mg)').sku, null);
+  okTrue('🚨 so it can never be confused with the 12/2 that replaced it',
     packingLine('Phoenix Blend (10mg/5mg)').sku !== packingLine('Phoenix Blend (12mg/2mg)').sku);
   okTrue('every blend label states its composition',
-    ['glow-blend', 'klow-blend', 'wolverine-stack', 'wolverine-blend-5mg', 'phoenix-blend', 'phoenix-blend-12-2']
+    ['glow-blend', 'klow-blend', 'wolverine-stack', 'wolverine-blend-5mg', 'phoenix-blend-12-2']
       .every(id => /\dmg/.test(CATALOG[id].label)));
 
   // ⚠️ Never invent one. A SKU that might be wrong defeats its only purpose.
