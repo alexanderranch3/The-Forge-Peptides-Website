@@ -132,6 +132,28 @@ function buildSyncPayload(order, customer) {
         }
       : { square_id: order.customer_id || null, name: null, email: null, phone: null },
     lines,
+    // 🚨 THE FIELD WHOSE ABSENCE COST $1,501.44. paymentState() above reads
+    // order.tenders to decide PAID, and until 2026-08-20 that was the only use
+    // of it — the payment itself was dropped on the floor. The order arrived
+    // marked paid with no record of how, and v_product_sales tests for a
+    // tender, so every website sale since the Square cutover was excluded from
+    // revenue. Silent, one-directional, and growing.
+    //
+    // 🔑 Square's own tender id travels with it. sync_order_tenders() keys the
+    // upsert on that id, which is what makes re-syncing a date range safe: the
+    // same payment updates in place instead of being counted twice.
+    tenders: (order.tenders || []).map((t) => ({
+      square_id: t.id || null,
+      type: t.type || null,
+      note: t.note || null,
+      amount_cents: t.amount_money?.amount ?? 0,
+      // Cash drawer figures, when Square recorded them. The DB drops the pair
+      // if it does not reconcile against amount_cents; the amount is the number
+      // that has to be right.
+      tendered_cents: t.cash_details?.buyer_tendered_money?.amount ?? null,
+      change_cents: t.cash_details?.change_back_money?.amount ?? null,
+      received_at: t.created_at || order.created_at || null,
+    })),
   };
 }
 
