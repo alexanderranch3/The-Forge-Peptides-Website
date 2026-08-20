@@ -213,6 +213,29 @@
       text-transform: uppercase; display: block; margin-bottom: 2px; }
     .wd-list .wd-fix { color: #6c757d; font-size: 0.78rem; display: block; margin-top: 2px; }
 
+    /* Collapse + dismiss. The banner lists every finding, which is right when
+       you are acting on them and in the way when you are not. Both controls are
+       deliberately WEAK: collapsing keeps the title, and a dismissal expires.
+       A watchdog you can permanently silence is a watchdog that lies. */
+    .wd-head { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+    .wd-head h3 { flex: 1; margin-bottom: 0; }
+    .wd-caret { color: #777; font-size: 0.8rem; line-height: 1.4; flex: none;
+      transition: transform .15s ease; user-select: none; }
+    .alert-band.wd-collapsed .wd-caret { transform: rotate(-90deg); }
+    .alert-band.wd-collapsed .wd-body { display: none; }
+    /* Everything dismissed: the band stays, drained of colour, one line tall.
+       Out of the way, still on the page. */
+    .alert-band.wd-muted     { border-color: #333; border-left-color: #555; }
+    .alert-band.wd-muted h3  { color: #888; font-weight: 600; }
+    .wd-list li { position: relative; padding-right: 26px; }
+    .wd-x { position: absolute; top: 5px; right: 0; background: none; border: 0;
+      color: #555; font-size: 0.95rem; line-height: 1; cursor: pointer; padding: 3px 5px;
+      border-radius: 4px; }
+    .wd-x:hover { color: #ddd; background: rgba(255,255,255,0.07); }
+    .wd-restore { color: #777; font-size: 0.78rem; margin-top: 9px; }
+    .wd-restore button { background: none; border: 0; color: #FF6A00; cursor: pointer;
+      font-size: 0.78rem; padding: 0; text-decoration: underline; }
+
     .stat-card.warn  { border-color: rgba(255,193,7,.4); }
     .stat-card.warn  .value { color: #ffc107; }
     .stat-card.alert { border-color: rgba(220,53,69,.5); }
@@ -361,12 +384,19 @@
          the scheduled run has gone quiet — a standing green banner is noise,
          and noise is how a real finding gets scrolled past. -->
     <div class="alert-band" id="watch-band" style="display:none;">
-      <h3 id="watch-title"></h3>
-      <p id="watch-body"></p>
-      <ul class="wd-list" id="watch-list"></ul>
-      <div style="margin-top:12px;">
-        <button class="btn-sm" id="watch-btn" onclick="checkWatchdog(true)">Re-check now</button>
-        <span class="dim" style="font-size:.78rem;margin-left:8px;" id="watch-note"></span>
+      <div class="wd-head" onclick="toggleWatchdog()" title="Click to collapse or expand">
+        <h3 id="watch-title"></h3>
+        <span class="wd-caret" id="watch-caret">&#9662;</span>
+      </div>
+      <div class="wd-body">
+        <p id="watch-body"></p>
+        <ul class="wd-list" id="watch-list"></ul>
+        <div class="wd-restore" id="watch-restore" style="display:none;"></div>
+        <div style="margin-top:12px;">
+          <button class="btn-sm" id="watch-btn" onclick="checkWatchdog(true)">Re-check now</button>
+          <button class="btn-sm" id="watch-dismiss-all" onclick="dismissAllWatchdog()">Dismiss all shown</button>
+          <span class="dim" style="font-size:.78rem;margin-left:8px;" id="watch-note"></span>
+        </div>
       </div>
     </div>
 
@@ -2087,6 +2117,135 @@ async function postAdjustment() {
 // is a liability, not a safeguard.
 const WATCH_MAX_ITEMS = 12;   // enough to act on; a wall of text gets skimmed
 
+// ── Collapsing and dismissing ────────────────────────────────────────────────
+// Frank, 2026-08-19: the banner lists every finding at once and pushes the
+// Orders table off the screen. He needs it out of the way.
+//
+// 🔑 THE GOVERNING RULE: neither control may ever produce a screen that looks
+// clean while something is wrong. That is the exact failure the live-probe
+// design was built to avoid, and a dismiss button is the easiest way to
+// reintroduce it. So:
+//   • Collapsing keeps the TITLE — the worst finding stays legible, in its
+//     severity colour, one line tall.
+//   • A dismissal EXPIRES after 24h. Anything still broken tomorrow comes back
+//     on its own. There is no permanent silence.
+//   • A finding never seen before FORCE-EXPANDS the band, overriding a
+//     remembered collapse. A new critical cannot arrive folded away.
+//   • Dismissing every finding leaves a muted one-line band, never nothing.
+const WATCH_DISMISS_HOURS = 24;
+const WD_DISMISS_KEY   = 'forge_wd_dismissed';
+const WD_COLLAPSE_KEY  = 'forge_wd_collapsed';
+const WD_SEEN_KEY      = 'forge_wd_seen';
+
+let wdRows = [];       // findings currently rendered, indexed by the ✕ buttons
+let wdAllRows = [];    // every finding this run produced, dismissed or not
+let wdBaseClass = 'alert-band';
+let wdTitleText = '';
+
+// A finding is identified by what it SAYS, not by position. If the wording or
+// the subject changes it is a different finding and an old dismissal does not
+// apply to it.
+const wdPrint = (r) => `${r.probe}|${r.who || ''}|${r.what}`;
+
+function wdReadMap(key) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const cutoff = Date.now() - WATCH_DISMISS_HOURS * 3600 * 1000;
+    const live = {};
+    for (const [k, ts] of Object.entries(raw)) if (Number(ts) > cutoff) live[k] = ts;
+    if (Object.keys(live).length !== Object.keys(raw).length) {
+      localStorage.setItem(key, JSON.stringify(live));   // prune as we go
+    }
+    return live;
+  } catch { return {}; }
+}
+function wdMark(key, prints) {
+  const m = wdReadMap(key);
+  for (const fp of prints) m[fp] = Date.now();
+  try { localStorage.setItem(key, JSON.stringify(m)); } catch { /* private mode */ }
+}
+
+// Draws the list from wdAllRows minus anything dismissed. Called on each fetch
+// and again after every dismissal, so the band re-settles without a round trip.
+function renderWatchdogList() {
+  const band = document.getElementById('watch-band');
+  const dismissed = wdReadMap(WD_DISMISS_KEY);
+  const seen = wdReadMap(WD_SEEN_KEY);
+
+  const live = wdAllRows.filter(r => !dismissed[wdPrint(r)]);
+  const hiddenCount = wdAllRows.length - live.length;
+  wdRows = live.slice(0, WATCH_MAX_ITEMS);
+
+  document.getElementById('watch-list').innerHTML = wdRows.map((r, i) =>
+    `<li><span class="wd-probe">${esc(r.probe.replace(/_/g, ' '))}</span>`
+    + (r.who ? `<b>${esc(r.who)}</b> — ` : '')
+    + `${esc(r.what)}`
+    + (r.fix ? `<span class="wd-fix">${esc(r.fix)}</span>` : '')
+    + `<button class="wd-x" title="Hide this for ${WATCH_DISMISS_HOURS}h"`
+    + ` onclick="dismissWatchdogItem(${i})">&times;</button></li>`).join('')
+    + (live.length > wdRows.length
+        ? `<li class="dim">…and ${live.length - wdRows.length} more.</li>` : '');
+
+  // 🔑 The count of hidden findings is itself always visible. Dismissing moves
+  // a finding out of the way; it never removes the evidence that it exists.
+  const restore = document.getElementById('watch-restore');
+  if (hiddenCount) {
+    restore.style.display = 'block';
+    restore.innerHTML = `${hiddenCount} finding${hiddenCount === 1 ? '' : 's'} hidden `
+      + `(back in ${WATCH_DISMISS_HOURS}h) — `
+      + `<button onclick="restoreWatchdog()">show ${hiddenCount === 1 ? 'it' : 'them'} now</button>`;
+  } else {
+    restore.style.display = 'none';
+  }
+
+  document.getElementById('watch-dismiss-all').style.display = live.length ? '' : 'none';
+
+  // Everything dismissed → drain the colour and fold it to one line. Still on
+  // the page, still counted, just no longer shouting.
+  const allHidden = wdAllRows.length > 0 && live.length === 0;
+  const title = document.getElementById('watch-title');
+  if (allHidden) {
+    band.className = wdBaseClass + ' wd-muted wd-collapsed';
+    title.textContent = `${hiddenCount} watchdog finding${hiddenCount === 1 ? '' : 's'} hidden — click to show`;
+    document.getElementById('watch-caret').style.display = '';
+    return;
+  }
+  title.textContent = wdTitleText;
+
+  // A finding never seen before overrides a remembered collapse. This is the
+  // one case where the banner insists on the screen.
+  const unseen = live.some(r => !seen[wdPrint(r)]);
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(WD_COLLAPSE_KEY) === '1'; } catch { /* ignore */ }
+  band.className = wdBaseClass + (collapsed && !unseen ? ' wd-collapsed' : '');
+  wdMark(WD_SEEN_KEY, live.map(wdPrint));
+}
+
+function toggleWatchdog() {
+  const band = document.getElementById('watch-band');
+  const nowCollapsed = !band.classList.contains('wd-collapsed');
+  band.classList.toggle('wd-collapsed', nowCollapsed);
+  try { localStorage.setItem(WD_COLLAPSE_KEY, nowCollapsed ? '1' : '0'); } catch { /* ignore */ }
+}
+
+function dismissWatchdogItem(i) {
+  const r = wdRows[i];
+  if (!r) return;
+  wdMark(WD_DISMISS_KEY, [wdPrint(r)]);
+  renderWatchdogList();
+}
+
+function dismissAllWatchdog() {
+  wdMark(WD_DISMISS_KEY, wdRows.map(wdPrint));
+  renderWatchdogList();
+  showToast(`Hidden for ${WATCH_DISMISS_HOURS}h — anything still wrong comes back`);
+}
+
+function restoreWatchdog() {
+  try { localStorage.removeItem(WD_DISMISS_KEY); } catch { /* ignore */ }
+  renderWatchdogList();
+}
+
 // Titles say what KIND of thing is wrong. A bare count ("4 findings") makes
 // Frank open the list to learn whether it matters.
 function watchTitle(probes, summary) {
@@ -2127,13 +2286,18 @@ async function checkWatchdog(manual = false) {
     }
 
     band.style.display = 'block';
-    band.className = 'alert-band'
+    // Held rather than applied, so renderWatchdogList() can layer wd-collapsed
+    // and wd-muted on top without losing the severity it must never soften.
+    wdBaseClass = 'alert-band'
       + (failing.length && data.summary.worst_severity !== 'critical'
           ? ' wd-' + data.summary.worst_severity : '');
 
-    document.getElementById('watch-title').textContent = failing.length
+    // Held for the same reason as the class: the muted state swaps the title
+    // out and must be able to put the real one back.
+    wdTitleText = failing.length
       ? watchTitle(data.probes, data.summary)
       : 'The scheduled watchdog has gone quiet';
+    document.getElementById('watch-title').textContent = wdTitleText;
 
     const checked = new Date(data.checked_at).toLocaleTimeString();
     document.getElementById('watch-body').innerHTML = failing.length
@@ -2158,15 +2322,8 @@ async function checkWatchdog(manual = false) {
       }
     }
 
-    const shown = rows.slice(0, WATCH_MAX_ITEMS);
-    document.getElementById('watch-list').innerHTML = shown.map(r =>
-      `<li><span class="wd-probe">${esc(r.probe.replace(/_/g, ' '))}</span>`
-      + (r.who ? `<b>${esc(r.who)}</b> — ` : '')
-      + `${esc(r.what)}`
-      + (r.fix ? `<span class="wd-fix">${esc(r.fix)}</span>` : '')
-      + `</li>`).join('')
-      + (rows.length > shown.length
-          ? `<li class="dim">…and ${rows.length - shown.length} more.</li>` : '');
+    wdAllRows = rows;
+    renderWatchdogList();
 
     // 🚨 State the limits of the alert channel plainly. Promising a watch that
     // is not happening is the same mistake as a monitor that fails silently.
