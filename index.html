@@ -1065,6 +1065,15 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   .nav-links a:last-child{border-bottom:none;}
   .footer-grid{grid-template-columns:1fr;}
 }
+
+/* Account panel inputs. box-sizing matters: these sit in a grid whose columns
+   are already narrow on a phone, and padding outside the box overflows them. */
+.acct-input{
+  width:100%;padding:11px 12px;background:#1a1a1a;
+  border:1px solid rgba(255,106,0,0.2);border-radius:9px;color:#fff;
+  font-size:0.9rem;outline:none;box-sizing:border-box;font-family:inherit;
+}
+.acct-input:focus{border-color:rgba(255,106,0,0.55);}
   </style>
 </head>
 <body class="plate">
@@ -1817,6 +1826,85 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   </div>
 </div>
 
+<!-- ACCOUNT PANEL — what a signed-in customer can see about themselves.
+     🔑 Everything rendered here arrives from /account, which is the only endpoint
+     a customer can reach. This markup must never fetch anything else. -->
+<div id="forge-account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9997;align-items:center;justify-content:center;padding:14px;"
+  onclick="if(event.target===this)closeAccount()">
+  <!-- 🚨 width is clamped in vw, not left to inset:0. A fixed element does not get
+       a definite width when the page behind it overflows sideways, and the invoice
+       modal once sized itself to 427px inside a 375px phone that way. -->
+  <div style="background:#111;border:1px solid rgba(255,106,0,0.25);border-radius:14px;width:min(620px,94vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header stays put: this panel is taller than a phone and scrolling to read
+         an order must never scroll the way out off the screen. -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:20px 20px 14px;border-bottom:1px solid rgba(255,255,255,0.08);flex:0 0 auto;">
+      <div style="min-width:0;">
+        <div style="color:#FF6A00;font-size:0.68rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">Your account</div>
+        <h3 id="account-title" style="color:#fff;margin:5px 0 0;font-size:1.25rem;">Orders &amp; details</h3>
+        <div id="account-email" style="color:#888;font-size:0.8rem;margin-top:4px;overflow-wrap:anywhere;"></div>
+      </div>
+      <button onclick="closeAccount()" aria-label="Close"
+        style="background:none;border:none;color:#888;font-size:1.6rem;line-height:1;cursor:pointer;flex:0 0 auto;padding:0 2px;">&times;</button>
+    </div>
+
+    <div style="overflow-y:auto;padding:18px 20px 22px;">
+
+      <!-- ── Past orders ───────────────────────────────────────────────────── -->
+      <div style="color:#FF6A00;font-size:0.68rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:10px;">Past orders</div>
+      <div id="account-orders"></div>
+
+      <!-- ── Details ───────────────────────────────────────────────────────── -->
+      <div style="color:#FF6A00;font-size:0.68rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;margin:26px 0 10px;">Your details</div>
+      <p style="color:#888;font-size:0.8rem;line-height:1.5;margin:0 0 14px;">
+        These fill in your next order automatically. Your email is how you sign in and
+        can't be changed here — <a href="mailto:orders@theforgepeptides.com" style="color:#FF6A00;">email us</a> and we'll move your account.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
+        <label style="display:block;">
+          <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">Full name</span>
+          <input id="acct-name" type="text" autocomplete="name" class="acct-input">
+        </label>
+        <label style="display:block;">
+          <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">Phone</span>
+          <input id="acct-phone" type="tel" autocomplete="tel" class="acct-input">
+        </label>
+      </div>
+      <label style="display:block;margin-top:10px;">
+        <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">Street address</span>
+        <input id="acct-line1" type="text" autocomplete="address-line1" class="acct-input">
+      </label>
+      <label style="display:block;margin-top:10px;">
+        <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">Apartment, suite (optional)</span>
+        <input id="acct-line2" type="text" autocomplete="address-line2" class="acct-input">
+      </label>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:10px;">
+        <label style="display:block;min-width:0;">
+          <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">City</span>
+          <input id="acct-city" type="text" autocomplete="address-level2" class="acct-input">
+        </label>
+        <label style="display:block;min-width:0;">
+          <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">State</span>
+          <input id="acct-state" type="text" autocomplete="address-level1" maxlength="2" class="acct-input">
+        </label>
+        <label style="display:block;min-width:0;">
+          <span style="display:block;color:#999;font-size:0.72rem;margin-bottom:5px;">ZIP</span>
+          <input id="acct-zip" type="text" inputmode="numeric" autocomplete="postal-code" maxlength="10" class="acct-input">
+        </label>
+      </div>
+
+      <button id="acct-save" onclick="saveAccountDetails()"
+        style="width:100%;margin-top:14px;padding:13px;background:linear-gradient(135deg,#c44d00,#FF6A00);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.92rem;cursor:pointer;">Save details</button>
+      <div id="acct-save-note" style="display:none;font-size:0.8rem;margin-top:9px;"></div>
+
+      <button onclick="signOut(event)"
+        style="width:100%;margin-top:22px;padding:12px;background:transparent;color:#999;border:1px solid rgba(255,255,255,0.14);border-radius:10px;font-size:0.88rem;cursor:pointer;">Sign out</button>
+    </div>
+  </div>
+</div>
+
 <!-- FAQ -->
 <section class="faq" id="faq">
   <div class="wrap">
@@ -2097,8 +2185,11 @@ function renderAccountNav() {
   const link = document.getElementById('nav-account');
   if (!link) return;
   if (forgeAccount && forgeAccount.signedIn) {
-    link.textContent = 'Sign out';
-    link.onclick = signOut;
+    // 🔑 Signed in, this link opens the account; signing out moved INSIDE the
+    // panel. Sign out was the only thing it did, which left a customer with
+    // nothing to sign in for — the orders and details were fetched and dropped.
+    link.textContent = 'My account';
+    link.onclick = openAccount;
     link.title = forgeAccount.email;
   } else {
     link.textContent = 'Sign in';
@@ -2151,6 +2242,7 @@ async function signOut(event) {
     await fetch('/.netlify/functions/account', { method: 'DELETE', credentials: 'same-origin' });
   } catch (_) { /* fall through — the nav re-renders from a fresh load either way */ }
   forgeAccount = null;
+  closeAccount();
   renderAccountNav();
 }
 
@@ -2211,6 +2303,160 @@ function handleSignInRedirect() {
 }
 
 document.addEventListener('DOMContentLoaded', () => { handleSignInRedirect(); loadAccount(); });
+
+// ── The account panel ───────────────────────────────────────────────────────
+// Everything below renders what /account already sent. loadAccount() has always
+// fetched the orders and the saved details and thrown both away; this is the
+// part that shows them.
+
+/** Product names reach this page from the database, and a custom line's name is
+ *  typed by hand in the admin. Escape everything before it becomes markup. */
+function escAcct(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+function acctMoney(cents) {
+  const n = Number(cents) || 0;
+  return '$' + (n / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function acctDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** A quantity arrives as a numeric like "2.000". Show 2, and 1.5 if it ever is. */
+function acctQty(q) {
+  const n = Number(q) || 0;
+  return Number.isInteger(n) ? String(n) : String(n).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function openAccount(event) {
+  if (event) event.preventDefault();
+  if (!forgeAccount || !forgeAccount.signedIn) return openSignIn(event);
+  document.getElementById('account-email').textContent = forgeAccount.email || '';
+  fillAccountForm();
+  renderAccountOrders();
+  const note = document.getElementById('acct-save-note');
+  if (note) note.style.display = 'none';
+  document.getElementById('forge-account-modal').style.display = 'flex';
+}
+
+function closeAccount() {
+  document.getElementById('forge-account-modal').style.display = 'none';
+}
+
+function fillAccountForm() {
+  const d = (forgeAccount && forgeAccount.details) || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('acct-name',  d.fullName);
+  set('acct-phone', d.phone);
+  set('acct-line1', d.line1);
+  set('acct-line2', d.line2);
+  set('acct-city',  d.city);
+  set('acct-state', d.state);
+  set('acct-zip',   d.postal);
+}
+
+function renderAccountOrders() {
+  const box = document.getElementById('account-orders');
+  if (!box) return;
+  const orders = (forgeAccount && forgeAccount.orders) || [];
+  if (!orders.length) {
+    box.innerHTML = '<p style="color:#888;font-size:0.86rem;line-height:1.55;margin:0;">'
+      + 'No orders on this account yet. Once you order, everything you bought shows up here.</p>';
+    return;
+  }
+  box.innerHTML = orders.map(accountOrderCard).join('');
+}
+
+function accountOrderCard(o) {
+  // 🔑 The status a customer is shown is the one the books hold — never a
+  // friendlier word for it. "Awaiting payment" means we have not been paid.
+  const paid = o.payment_state === 'PAID';
+  const status = paid ? 'Paid' : 'Awaiting payment';
+  const colour = paid ? '#7ac77a' : '#ffb454';
+
+  // Products first and prominent; a shipping or balance-due line still shows,
+  // because an order with a total and no visible lines reads as a mistake.
+  const items = Array.isArray(o.items) ? o.items : [];
+  const rows = items.length
+    ? items.map((it) => {
+        const isProduct = it.kind === 'PRODUCT';
+        const qty = isProduct && Number(it.qty) > 0
+          ? ' <span style="color:#777;">&times;' + escAcct(acctQty(it.qty)) + '</span>' : '';
+        return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:0.86rem;'
+          + 'color:' + (isProduct ? '#ddd' : '#8a8a8a') + ';padding:2px 0;">'
+          + '<span style="overflow-wrap:anywhere;">' + escAcct(it.name) + qty + '</span></div>';
+      }).join('')
+    : '<div style="color:#777;font-size:0.84rem;">'
+        + escAcct(acctQty(o.item_count)) + ' item(s)</div>';
+
+  const tracking = o.tracking_number
+    ? '<div style="margin-top:8px;font-size:0.8rem;color:#999;overflow-wrap:anywhere;">'
+      + 'Tracking <span style="color:#ddd;">' + escAcct(o.tracking_number) + '</span></div>'
+    : '';
+
+  return '<div style="border:1px solid rgba(255,255,255,0.09);border-radius:11px;padding:13px 14px;margin-bottom:10px;background:#0d0d0d;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="color:#fff;font-weight:700;font-size:0.92rem;">' + escAcct(o.order_no) + '</div>'
+    +   '<div style="color:#888;font-size:0.78rem;">' + escAcct(acctDate(o.placed_at)) + '</div>'
+    + '</div>'
+    + '<div style="margin:9px 0 8px;">' + rows + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:8px;">'
+    +   '<span style="color:' + colour + ';font-size:0.78rem;font-weight:600;">' + status + '</span>'
+    +   '<span style="color:#fff;font-weight:700;font-size:0.92rem;">' + acctMoney(o.total_cents) + '</span>'
+    + '</div>'
+    + tracking
+    + '</div>';
+}
+
+async function saveAccountDetails() {
+  const btn  = document.getElementById('acct-save');
+  const note = document.getElementById('acct-save-note');
+  const val  = (id) => (document.getElementById(id).value || '').trim();
+  const body = {
+    fullName: val('acct-name'), phone: val('acct-phone'),
+    line1: val('acct-line1'),   line2: val('acct-line2'),
+    city:  val('acct-city'),    state: val('acct-state').toUpperCase(),
+    postal: val('acct-zip'),    country: 'US',
+  };
+  btn.disabled = true; btn.textContent = 'Saving…';
+  note.style.display = 'none';
+  let ok = false;
+  try {
+    const res = await fetch('/.netlify/functions/account', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    ok = res.ok && (await res.json()).ok === true;
+  } catch (_) { ok = false; }
+  btn.disabled = false; btn.textContent = 'Save details';
+  // 🔑 Only claim it saved when the server said so. A green tick on a failed
+  // write is how someone finds out at checkout that their address never stuck.
+  if (ok) {
+    forgeAccount.details = { ...forgeAccount.details, ...body, postal: body.postal };
+    note.textContent = 'Saved. These fill in your next order.';
+    note.style.color = '#7ac77a';
+  } else {
+    note.textContent = "That didn't save. Check your connection and try again.";
+    note.style.color = '#ff8a7a';
+  }
+  note.style.display = 'block';
+}
+
+// Esc closes the panel. It is taller than a phone screen, and a modal you have
+// to scroll through to find the way out of is the invoice-preview bug again.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const m = document.getElementById('forge-account-modal');
+  if (m && m.style.display === 'flex') closeAccount();
+});
+
 
 function selectRetaSize(btn) {
   btn.closest('.reta-sizes').querySelectorAll('.reta-size').forEach(b => b.classList.remove('active'));
@@ -2521,10 +2767,30 @@ function handleFooterSignup(e) {
 // Email signup popup logic
 (function() {
   if (localStorage.getItem('forge_popup_seen')) return;
-  setTimeout(function() {
+
+  // 🚨 THIS POPUP OUTRANKS EVERY OTHER PANEL ON THE PAGE (z-index 9998 vs the
+  // order modal's 9995), so an unconditional five-second timer could land it on
+  // top of a half-filled CHECKOUT FORM. It was found sitting on the account
+  // panel, but the checkout case is the one that costs money.
+  // 🔑 And it pitches a NEW-customer discount: anyone signed in has already
+  // ordered, so it would be asking for the email they are signed in with.
+  const OVERLAYS = ['forge-order-modal', 'forge-signin-modal', 'forge-account-modal',
+                    'policy-overlay', 'tos-overlay'];
+  const busy = () => OVERLAYS.some((id) => {
+    const el = document.getElementById(id);
+    return el && el.style.display && el.style.display !== 'none';
+  });
+
+  const tryShow = () => {
+    if (localStorage.getItem('forge_popup_seen')) return;
+    if (typeof forgeAccount !== 'undefined' && forgeAccount && forgeAccount.signedIn) return;
+    // Wait it out rather than cancelling — someone who glanced at the FAQ for a
+    // moment should still see the offer, just not over the top of it.
+    if (busy()) { setTimeout(tryShow, 3000); return; }
     const popup = document.getElementById('signup-popup');
     if (popup) popup.style.display = 'flex';
-  }, 5000);
+  };
+  setTimeout(tryShow, 5000);
 })();
 
 function closeSignupPopup() {

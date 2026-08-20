@@ -4,10 +4,16 @@
 // DELETE -> sign out
 //
 // 🚨 THIS IS THE ONLY ENDPOINT A SIGNED-IN CUSTOMER CAN REACH, and it returns
-// exactly two things: their own saved details, and customer_orders(), which is
-// built with NO cost, margin or vendor column. Anything added here is visible to
-// a customer about their own account — never widen it with data from a table that
-// carries cost.
+// exactly three things: their own saved details, customer_orders(), and
+// customer_order_items() — all three built with NO cost, margin or vendor column.
+// Anything added here is visible to a customer about their own account — never
+// widen it with data from a table that carries cost.
+//
+// ⚠️ customer_order_items() reads order_line_items, which DOES carry
+// unit_cost_cents and cost_source. It is safe only because migration 040 spells
+// out its four columns rather than selecting the row; a dry-run assertion pins
+// that column set. If that function is ever edited, re-read it before trusting
+// this comment.
 //
 // 🔑 Identity comes ONLY from the HttpOnly cookie's HMAC, never from the request
 // body. A body-supplied account id would let anyone read any account by guessing.
@@ -29,11 +35,22 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      const [details, orders] = await Promise.all([
-        rpc('customer_details', { p_account: session.accountId }),
-        rpc('customer_orders',  { p_account: session.accountId }),
+      const [details, orders, items] = await Promise.all([
+        rpc('customer_details',     { p_account: session.accountId }),
+        rpc('customer_orders',      { p_account: session.accountId }),
+        rpc('customer_order_items', { p_account: session.accountId }),
       ]);
       const d = (Array.isArray(details) ? details[0] : null) || {};
+
+      // Hang each order's lines off the order itself, so the page never has to
+      // join two lists and can never mis-pair them.
+      const byOrder = new Map();
+      for (const it of (Array.isArray(items) ? items : [])) {
+        if (!byOrder.has(it.order_no)) byOrder.set(it.order_no, []);
+        byOrder.get(it.order_no).push({
+          kind: it.kind, name: it.name, qty: Number(it.quantity) || 0,
+        });
+      }
       return json(200, {
         signedIn: true,
         email: session.email,
@@ -43,7 +60,9 @@ exports.handler = async (event) => {
           city: d.city || '', state: d.state_region || '',
           postal: d.postal_code || '', country: d.country || 'US',
         },
-        orders: Array.isArray(orders) ? orders : [],
+        orders: (Array.isArray(orders) ? orders : []).map((o) => ({
+          ...o, items: byOrder.get(o.order_no) || [],
+        })),
       });
     }
 
