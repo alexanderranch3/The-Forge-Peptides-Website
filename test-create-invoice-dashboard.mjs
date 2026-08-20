@@ -171,8 +171,38 @@ await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
   fulfillment: 'Local Pickup',
 }) });
 let p = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
-ok('Florida tax is 7% of the product subtotal', p.tax_cents, Math.round(productCents * 0.07));
+ok('Florida tax with no promo is 7% of the subtotal', p.tax_cents, Math.round(productCents * 0.07));
 ok('and nothing is discounted without a promo', p.discount_cents, 0);
+
+// 🚨 TAX IS ON THE DISCOUNTED AMOUNT. This assertion previously encoded the
+// opposite, taken from a hint on the admin form rather than from the books —
+// and a 100%-off order would have carried $11.20 of tax on a free basket.
+// Every real discounted order settles it: FP-396224 is $160.00 with $16.00 off
+// and $10.08 of tax, which is 7.00% of $144.00 and 6.30% of $160.00.
+priorOrders = [];
+process.env.OWNER_PROMO_CODE = 'test-secret-code';
+calls = []; fn = load();
+await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
+  items: [{ id: 'retatrutide-10mg', name: 'Retatrutide 10mg', price: 160, qty: 1 }],
+  customerName: 'FL', customerEmail: 'fl2@example.com', promoCode: 'LOYAL10',
+  fulfillment: 'Local Pickup',
+}) });
+p = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
+ok('🚨 a 10% discount is taxed on $144.00, not $160.00', p.tax_cents, 1008);
+ok('   reproducing FP-396224 exactly', [p.discount_cents, p.tax_cents], [1600, 1008]);
+
+// And the one that made it matter: a free order is genuinely free.
+calls = []; fn = load();
+await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
+  items: [{ id: 'retatrutide-10mg', name: 'Retatrutide 10mg', price: 160, qty: 1 }],
+  customerName: 'Owner', customerEmail: 'ftt1598@gmail.com', promoCode: 'test-secret-code',
+  fulfillment: 'Local Pickup',
+}) });
+p = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
+ok('🚨 a 100% code carries NO tax', p.tax_cents, 0);
+ok('   and nothing is left to pay', p.discount_cents, 16000);
+delete process.env.OWNER_PROMO_CODE;
+priorOrders = [{ id: 'x' }];
 
 // Shipping to Maryland: no Florida tax, and shipping is NOT taxed anywhere.
 calls = []; fn = load();
@@ -252,9 +282,15 @@ console.log('\n— 🚨 the owner code is NOT in the source —');
 // This repository is PUBLIC. A 100%-off code committed here could be read by
 // anyone and used to empty the shelf, so it lives only in an env var.
 {
-  const src = readFileSync('./netlify/functions/create-invoice.js', 'utf8');
-  okTrue('no literal code string in create-invoice.js',
-    /OWNER_PROMO_CODE/.test(src) && !/Drezzle/i.test(src));
+  // 🔑 Reads the LIVE code out of the environment and checks it appears in no
+  // source file — rather than hardcoding it here, which would leak it through
+  // this test instead. Skips when the variable is unset (CI has no secret).
+  const live = (process.env.OWNER_PROMO_CODE_CHECK || '').trim();
+  const files = ['./netlify/functions/create-invoice.js', './netlify/functions/check-promo.js', './index.html'];
+  const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
+  okTrue('the code is read from OWNER_PROMO_CODE', /OWNER_PROMO_CODE/.test(src));
+  okTrue('and the real code appears in no source file',
+    !live || !src.toLowerCase().includes(live.toLowerCase()));
 }
 
 console.log('\n— with OWNER_PROMO_CODE unset, the code does not exist —');

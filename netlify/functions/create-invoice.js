@@ -239,8 +239,15 @@ async function validatePromo(promoCode, customerId, customerEmail) {
   // ⚠️ Every use is logged loudly. If this code ever leaks, the orders tab will
   // show INTERNAL orders nobody placed and the log will say so — rotate the
   // variable and it is dead immediately.
+  // 🚨 Case-INSENSITIVE. The checkout box upper-cases what is typed, so
+  // A mixed-case code typed into that box arrives here upper-cased, so a
+  // case-sensitive match rejected the owner's own code — precisely the bug this
+  // fixes. check-promo.js compares the same way, so the page and the charge
+  // agree.
+  // ⚠️ NEVER write the actual code in a comment here. This repo is public, and
+  // test-create-invoice-dashboard.mjs fails the build if it appears.
   const ownerCode = (process.env.OWNER_PROMO_CODE || '').trim();
-  if (ownerCode && promoCode.trim() === ownerCode) {
+  if (ownerCode && promoCode.trim().toLowerCase() === ownerCode.toLowerCase()) {
     console.warn(`OWNER PROMO USED — free order for ${customerEmail || 'unknown email'}`);
     return 'OWNER';
   }
@@ -341,10 +348,24 @@ async function createOrderInDashboard({
   // Local pickup is always FL; shipping to FL is taxed, elsewhere is not.
   // Shipping itself is not taxable in Florida.
   const applyFlTax = fulfillment === 'Local Pickup' || String(state || '').toUpperCase() === 'FL';
-  const taxCents   = applyFlTax ? Math.round(productCents * (FL_TAX_RATE / 100)) : 0;
-  // ORDER scope in Square, so it covers shipping too — proven by FP-001067.
+
+  // ORDER scope in Square, so it covers shipping too — proven by FP-001067
+  // ($160.00 product + $25.00 shipping, $18.50 off = 10% of $185.00).
   const pct        = promoPercent(promoValid);
   const discCents  = pct ? Math.round((productCents + shipCents) * (pct / 100)) : 0;
+
+  // 🚨 TAX IS CHARGED ON THE DISCOUNTED AMOUNT, NOT THE FULL SUBTOTAL. Every
+  // real discounted order says so to two decimal places: FP-396224, FP-507650,
+  // FP-001136, FP-001134 and FP-001104 all show tax at exactly 7.00% of
+  // (subtotal − discount) and 6.30% of the subtotal.
+  //
+  // ⚠️ This was wrong when step 5 shipped, and the admin form's own hint still
+  // claimed "before discount, the way Square applies it". A 100%-off order would
+  // have been charged $11.20 of tax on a free basket. The lesson: the storefront
+  // had it right all along, and the assertion that agreed with the hint was
+  // testing a premise nobody had checked against the books.
+  const taxableCents = Math.round(productCents * (1 - pct / 100));
+  const taxCents     = applyFlTax ? Math.round(taxableCents * (FL_TAX_RATE / 100)) : 0;
 
   // 🔑 An owner test order is INTERNAL, not a SALE. It moves stock because the
   // vial really does leave, but it is not income — and a $0 SALE would carry

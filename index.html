@@ -1068,6 +1068,49 @@ footer{background:var(--card);border-top:1px solid rgba(255,106,0,0.2);padding:6
   </style>
 </head>
 <body class="plate">
+<script>
+// ── A reload starts at the TOP ───────────────────────────────────────────────
+// Frank, 2026-08-20: "every time the page is reloaded it always brings us to
+// frequently asked questions."
+//
+// 🔑 TWO SEPARATE CAUSES, both handled here, which is why fixing one alone did
+// not work:
+//   1. The nav links are plain anchors (<a href="#faq">), so clicking FAQ writes
+//      #faq into the URL. It stays there, and every later reload jumps back to
+//      the FAQ — the page was doing exactly what the address bar told it to.
+//   2. Browsers restore the previous scroll position on reload regardless of any
+//      hash, so even after clearing it the page would land halfway down.
+//
+// 🔑 A SHARED LINK STILL WORKS. This only acts on a RELOAD — navigation type
+// 'reload' — so theforgepeptides.com/#faq sent to a customer still opens on the
+// FAQ. Stripping the hash unconditionally would have broken every deep link on
+// the site to fix a reload.
+//
+// ⚠️ Runs inline at the top of <body>, before the page has been laid out, so the
+// browser never gets the chance to jump first and be corrected afterwards —
+// which would have looked like a flicker.
+(function () {
+  try {
+    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    var isReload = nav ? nav.type === 'reload'
+      : (performance.navigation && performance.navigation.type === 1);   // older browsers
+    if (!isReload) return;
+
+    // ⚠️ SET ONLY ON A RELOAD, not for every navigation. scrollRestoration also
+    // governs BACK and FORWARD, so turning it off globally would mean pressing
+    // Back landed at the top of the previous page instead of where you left it —
+    // trading one annoyance for a worse one.
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    if (location.hash) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    // Belt and braces: the hash is gone, but a restored scroll position can
+    // still land later, so put it back at the top once the page is up too.
+    window.addEventListener('load', function () { window.scrollTo(0, 0); });
+    window.scrollTo(0, 0);
+  } catch (e) { /* never let a scroll nicety break the shop */ }
+})();
+</script>
 
 <!-- NAV -->
 <nav>
@@ -2612,7 +2655,7 @@ document.getElementById('signup-popup').addEventListener('click', function(e) {
             <input id="forge-promo" type="text" placeholder="Promo code (optional)"
               style="flex:1;padding:12px 14px;background:#1a1a1a;border:1px solid rgba(255,106,0,0.2);border-radius:var(--r-lg);color:#fff;font-size:0.9rem;outline:none;text-transform:uppercase;box-sizing:border-box;"
               onfocus="this.style.borderColor='rgba(255,106,0,0.55)'" onblur="this.style.borderColor='rgba(255,106,0,0.2)'"
-              oninput="this.value=this.value.toUpperCase();renderOrderSummary()">
+              oninput="this.value=this.value.toUpperCase();checkPromo();renderOrderSummary()">
             <span id="forge-promo-status" style="font-size:0.82rem;min-width:70px;text-align:right;"></span>
           </div>
 
@@ -2953,21 +2996,77 @@ function selectShippingRate(id, amount, label, carrier, days) {
   renderOrderSummary();
 }
 
+// ── What a promo code is worth ───────────────────────────────────────────────
+// 🚨 ASKED OF THE SERVER, never decided here. This page is public, so a private
+// code checked in this file would be published to anyone who viewed source —
+// which is why the owner's own code was reported "Invalid": it could not be
+// listed here, so it matched nothing.
+//
+// 🔑 check-promo is NOT the authority on what is charged; create-invoice
+// re-decides at checkout and always did. This exists so the total on screen
+// matches the total billed.
+var promoState = { code: '', percent: 0, label: '' };
+var promoSeq = 0;
+
+async function checkPromo() {
+  const el = document.getElementById('forge-promo');
+  const code = el ? el.value.trim().toUpperCase() : '';
+  if (!code) { promoState = { code: '', percent: 0, label: '' }; return; }
+  if (promoState.code === code) return;            // already known
+
+  // ⚠️ Every reply carries the sequence it was asked with, so a slow answer for
+  // an old code can never overwrite a newer one — typing an eight-character code
+  // fires eight requests and only the last is about what is actually in the box.
+  // ⚠️ NEVER write a real promo code in a comment. This page is public source.
+  const seq = ++promoSeq;
+  try {
+    const res = await fetch('/.netlify/functions/check-promo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const d = await res.json();
+    if (seq !== promoSeq) return;
+    promoState = { code, percent: d.valid ? d.percent : 0, label: d.label || '' };
+  } catch (e) {
+    // ⚠️ Unreachable means "we could not check", so nothing is applied here —
+    // but the code still travels with the order and create-invoice decides. A
+    // customer is never charged more than the page showed.
+    if (seq === promoSeq) promoState = { code, percent: 0, label: '' };
+  }
+  renderOrderSummary();
+}
+
 function renderOrderSummary() {
   const container  = document.getElementById('forge-order-items');
   const subtotal   = Object.values(forgeOrder).reduce((s,i) => s + i.price * i.qty, 0);
   const shipping   = calcShipping();
   const promoEl    = document.getElementById('forge-promo');
   const promoCode  = promoEl ? promoEl.value.trim().toUpperCase() : '';
-  const promoValid = promoCode === 'FORGE10' || promoCode === 'LOYAL10';
-  const discount   = promoValid ? subtotal * 0.10 : 0;
+  // 🚨 THE SERVER DECIDES WHAT A CODE IS WORTH, not a list in this file. This
+  // page is public, so a private code could never be checked here — it would be
+  // published to anyone who viewed source. checkPromo() below asks check-promo
+  // and stores the answer in promoState.
+  const promoValid = promoState.code === promoCode && promoState.percent > 0;
+  const promoPct   = promoValid ? promoState.percent : 0;
+  // 🔑 The discount covers SHIPPING TOO — it is ORDER scope, proven by
+  // FP-001067: $160.00 product + $25.00 shipping, $18.50 off = 10% of $185.00.
+  // This used to take the percentage off the product subtotal alone and so
+  // under-stated every discounted order that was being shipped.
+  const discount   = promoPct ? (subtotal + shipping) * (promoPct / 100) : 0;
 
   // Florida sales tax estimate (7%) — local pickup is always FL; ship applies when state is FL
   const fulfillmentEl = document.getElementById('forge-fulfillment');
   const fulfillmentVal = fulfillmentEl ? fulfillmentEl.value : '';
   const stateVal = (document.getElementById('forge-state')?.value || '').trim().toUpperCase();
   const showFlTax  = fulfillmentVal === 'Local Pickup' || (fulfillmentVal === 'Ship' && stateVal === 'FL');
-  const estimatedTax = showFlTax ? Math.round((subtotal - discount) * 0.07 * 100) / 100 : 0;
+  // 🔑 Tax is on the discounted PRODUCT amount — shipping is not taxable in
+  // Florida, and every real discounted order shows tax at exactly 7.00% of the
+  // post-discount figure. Subtracting the whole discount (which now includes
+  // shipping) would take too much off the taxable base, so the product's own
+  // share is what comes off.
+  const taxable      = subtotal * (1 - promoPct / 100);
+  const estimatedTax = showFlTax ? Math.round(taxable * 0.07 * 100) / 100 : 0;
 
   const grandTotal = subtotal - discount + shipping + estimatedTax;
 
@@ -2977,9 +3076,13 @@ function renderOrderSummary() {
   // Update promo status badge
   const statusEl = document.getElementById('forge-promo-status');
   if (statusEl) {
-    if (promoValid)                  statusEl.innerHTML = '<span style="color:#28a745;font-weight:700;">✓ Applied</span>';
-    else if (promoCode.length > 0)   statusEl.innerHTML = '<span style="color:#dc3545;">Invalid</span>';
-    else                             statusEl.innerHTML = '';
+    if (promoValid)                       statusEl.innerHTML = '<span style="color:#28a745;font-weight:700;">✓ ' + promoPct + '% off</span>';
+    // ⚠️ "Checking" while the answer is in flight, never "Invalid". Calling a
+    // code invalid before asking is what made the owner's own code look wrong.
+    else if (promoCode && promoState.code !== promoCode)
+                                          statusEl.innerHTML = '<span style="color:#888;">Checking…</span>';
+    else if (promoCode.length > 0)        statusEl.innerHTML = '<span style="color:#dc3545;">Invalid</span>';
+    else                                  statusEl.innerHTML = '';
   }
 
   container.innerHTML = Object.entries(forgeOrder).map(([id, item]) => `
@@ -3004,7 +3107,7 @@ function renderOrderSummary() {
       </div>
       ${promoValid ? `
       <div style="display:flex;justify-content:space-between;font-size:0.86rem;">
-        <span style="color:#28a745;">${promoCode} — 10% off</span>
+        <span style="color:#28a745;">${promoCode} — ${promoPct}% off</span>
         <span style="color:#28a745;">−$${discount.toFixed(2)}</span>
       </div>` : ''}
       ${showFlTax ? `
