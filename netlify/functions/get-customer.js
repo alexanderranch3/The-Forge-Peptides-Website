@@ -80,7 +80,7 @@ exports.handler = async (event) => {
 
   try {
     const id = encodeURIComponent(partyId);
-    const [profile, orders, charges, payments] = await Promise.all([
+    const [profile, orders, charges, payments, grant] = await Promise.all([
       sb(`v_customer_profile?select=*&party_id=eq.${id}`),
       // Cancelled orders are included on purpose and labelled: a voided order is
       // part of this customer's history and hiding it invites the question
@@ -93,6 +93,11 @@ exports.handler = async (event) => {
          + `&type=eq.HOUSE_ACCOUNT&house_account_party_id=eq.${id}&order=received_at.desc`),
       sb(`house_account_payments?select=id,amount_cents,method,reference,note,received_at`
          + `&party_id=eq.${id}&order=received_at.desc`),
+      // 🔑 Read from `parties`, not from v_customer_profile. The permission
+      // (migration 028) is a newer fact than that view, and fetching it here
+      // means no view has to be rebuilt to show it. Falls back to "no account"
+      // rather than throwing, so a profile still opens if 028 is not applied.
+      sb(`parties?select=house_account_enabled,house_account_limit_cents&id=eq.${id}`).catch(() => []),
     ]);
 
     if (!profile.length) {
@@ -102,7 +107,13 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
-        profile: profile[0],
+        profile: {
+          ...profile[0],
+          // Whether this person may be charged to a tab at all — separate from
+          // whether they currently owe anything, and separate from `kind`.
+          house_account_enabled: grant.length ? grant[0].house_account_enabled === true : false,
+          house_account_limit_cents: grant.length ? (grant[0].house_account_limit_cents ?? null) : null,
+        },
         orders: orders.map((o) => ({
           order_id: o.id,
           order_no: o.order_no,

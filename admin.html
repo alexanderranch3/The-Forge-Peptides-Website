@@ -333,6 +333,31 @@
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+    /* ── House account panel (added 2026-08-20) ──────────────────────────── */
+    /* Always on the customer profile, whether or not they have an account —
+       the answer to "how do I give this person one?" has to be somewhere. */
+    .house-panel {
+      background: #141414; border: 1px solid rgba(255,106,0,.16); border-left: 3px solid #FF6A00;
+      border-radius: 10px; padding: 16px 18px; margin-bottom: 18px;
+    }
+    .house-panel.over { border-color: rgba(255,193,7,.5); border-left-color: #ffc107; }
+    .house-head { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+    .house-head > div:first-child { flex: 1 1 240px; min-width: 0; }
+    .house-head h3 { color: #fff; font-size: .95rem; margin-bottom: 5px;
+      display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .house-head p { color: #999; font-size: .83rem; line-height: 1.6; }
+    .house-head p b { color: #ddd; }
+    .house-actions { display: flex; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
+
+    .house-owed {
+      display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      margin-top: 14px; padding-top: 13px; border-top: 1px solid rgba(255,255,255,.07);
+    }
+    .house-owed-amt { color: #dc3545; font-weight: 700; font-size: .95rem; display: block; }
+    .house-owed.settled .house-owed-amt { color: #28a745; }
+    .house-owed .dim { font-size: .78rem; }
+    .house-pay { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.07); }
+
     /* ── Finance (added 2026-08-20) ──────────────────────────────────────── */
     .stat-card.good        { border-color: rgba(40,167,69,.35); }
     .stat-card.good .value { color: #28a745; }
@@ -1890,6 +1915,7 @@ function onCustomerPick(opts) {
     salePartyId = null;
     setNewCustomerVisible(true);
     hint.textContent = 'New customer — they are saved with the sale.';
+    renderSale();
     return;
   }
 
@@ -1899,6 +1925,7 @@ function onCustomerPick(opts) {
   if (!v) {
     salePartyId = null;
     if (!opts || !opts.silent) hint.textContent = 'No customer recorded on this sale.';
+    renderSale();
     return;
   }
 
@@ -1912,6 +1939,9 @@ function onCustomerPick(opts) {
       ? `${c.name} — ${bits.join(' · ')}`
       : `${c.name} — no email or phone on file`;
   }
+  // 🔑 Whether a tab is on offer depends on WHO was picked, so the payment
+  // dropdown has to be rebuilt every time the customer changes.
+  renderSale();
 }
 
 function openSale() {
@@ -1982,16 +2012,44 @@ function renderSale() {
     ? 'Counts as revenue.'
     : '<b>Moves stock but is NOT revenue</b> — kept out of every sales figure.';
 
+  // ── Is a tab even on offer? (added 2026-08-20, migration 028) ──────────────
+  // 🔑 Credit is granted per person. The option is only shown for a picked
+  // customer who has been given a house account — but it is create-order.js
+  // that refuses the sale, because a rule enforced only by a hidden <option>
+  // is not enforced at all.
+  const picked = salePartyId ? (saleCustomers || []).find((x) => x.party_id === salePartyId) : null;
+  const mayCharge = purpose === 'SALE' && !!picked && picked.house_account_enabled === true;
+  const payEl = document.getElementById('sale-payment');
+  const tabOpt = payEl.querySelector('option[value="HOUSE_ACCOUNT"]');
+  if (tabOpt) {
+    tabOpt.disabled = !mayCharge;
+    tabOpt.hidden = !mayCharge;
+    // ⚠️ If the tab was already selected and the customer changed under it, the
+    // selection has to move. Leaving a disabled option selected would submit a
+    // house-account sale the server is about to refuse.
+    if (!mayCharge && payEl.value === 'HOUSE_ACCOUNT') payEl.value = 'PAID';
+  }
+
   // 🔑 Say plainly what a tab does, because it reads like a contradiction:
   // the sale counts as revenue immediately and the money is still owed. Both
   // are true, and that split is the whole model.
-  const pay = document.getElementById('sale-payment').value;
-  document.getElementById('sale-payment-hint').innerHTML = pay === 'HOUSE_ACCOUNT'
-    ? '<b>Goes on their tab.</b> The sale counts as revenue now; the balance shows on their profile until you record the payment.'
-    : '';
+  const pay = payEl.value;
+  const payHint = document.getElementById('sale-payment-hint');
+  if (pay === 'HOUSE_ACCOUNT') {
+    const limit = picked && picked.house_account_limit_cents;
+    payHint.innerHTML = '<b>Goes on their tab.</b> The sale counts as revenue now; the balance shows on their ' +
+      'profile until you record the payment.' +
+      (limit != null ? ` Their credit limit is <b>${centsToUsd(limit)}</b>.` : '');
+  } else if (purpose === 'SALE' && picked && !picked.house_account_enabled) {
+    // Why the option is missing, said once, where it was looked for.
+    payHint.innerHTML = `<span class="dim">${esc(picked.name)} has no house account — give them one on the ` +
+      '<b>Customers</b> tab to sell on credit.</span>';
+  } else {
+    payHint.innerHTML = '';
+  }
   // A tab has to belong to someone who can be asked for the money later.
   if (pay === 'HOUSE_ACCOUNT' && purpose !== 'SALE') {
-    document.getElementById('sale-payment-hint').innerHTML =
+    payHint.innerHTML =
       '<b>Only a sale can go on a house account</b> — your own use and give-aways are not owed to anyone.';
   }
 
@@ -2867,22 +2925,84 @@ function renderCustomerProfile(d) {
       ${note ? `<div class="note">${note}</div>` : ''}
     </div>`;
 
-  // 🔑 The tab, and the one button that clears it. Shown at the top when
-  // anything is owed, because it is the only part of this screen that is a
-  // thing to DO rather than a thing to read.
-  const houseBlock = owes > 0
-    ? `<div class="alert-band">
-         <h3>Owes ${centsToUsd(owes)} on their house account</h3>
-         <p>${p.house_charged_cents ? `${centsToUsd(p.house_charged_cents)} charged, ${centsToUsd(p.house_paid_cents)} paid off.` : ''}
-            Recording a payment reduces this balance. It does not change revenue &mdash;
-            the sale counted when it was charged.</p>
-         <div style="margin-top:12px;">
-           <button class="btn-sm" onclick="recordHousePayment('${esc(p.party_id)}', ${owes})">Record a payment</button>
-         </div>
-       </div>`
-    : (p.house_charged_cents
-        ? `<div class="hint" style="margin-bottom:14px;">House account settled &mdash; ${centsToUsd(p.house_charged_cents)} charged and paid off in full.</div>`
-        : '');
+  // ── The house account: the permission, the balance, and the way to clear it ─
+  // 🔑 THIS BLOCK IS ALWAYS SHOWN, even for someone with no account and no
+  // balance. It used to appear only when money was owed, which meant the answer
+  // to "how do I give this person a house account?" was nowhere on the screen —
+  // the exact question Frank asked on 2026-08-20.
+  //
+  // ⚠️ Granting and revoking is a CREDIT decision, not a display toggle:
+  // create-order.js refuses a house-account sale for anyone without it. Revoking
+  // stops new credit and leaves any debt exactly where it was, which is why the
+  // balance stays on screen after a revocation rather than disappearing with it.
+  const enabled = p.house_account_enabled === true;
+  const limit   = p.house_account_limit_cents;
+  const overLimit = enabled && limit != null && owes > limit;
+
+  const houseBlock = `
+    <div class="house-panel${overLimit ? ' over' : ''}">
+      <div class="house-head">
+        <div>
+          <h3>House account
+            <span class="badge ${enabled ? 'badge-paid' : 'badge-other'}">${enabled ? 'ALLOWED' : 'NOT ALLOWED'}</span>
+          </h3>
+          <p>${enabled
+            ? `${esc(p.display_name || 'They')} can be charged to a tab on a new sale.` +
+              (limit != null ? ` Credit limit <b>${centsToUsd(limit)}</b>.` : ' No credit limit set.')
+            : `Sales to ${esc(p.display_name || 'this customer')} must be paid at the time.
+               Giving them an account adds the <b>&ldquo;On their house account&rdquo;</b> option on a new sale.`}</p>
+        </div>
+        <div class="house-actions">
+          ${enabled
+            ? `<button class="btn-sm" onclick="setHouseAccountLimit('${esc(p.party_id)}', ${limit == null ? 'null' : limit})">
+                 ${limit == null ? 'Set a credit limit' : 'Change the limit'}</button>
+               <button class="btn-sm danger" onclick="revokeHouseAccount('${esc(p.party_id)}', ${owes})">Take the account away</button>`
+            : `<button class="btn-primary btn-sm" onclick="grantHouseAccount('${esc(p.party_id)}')">Give them a house account</button>`}
+        </div>
+      </div>
+
+      ${owes > 0 ? `
+        <div class="house-owed">
+          <div>
+            <span class="house-owed-amt">${centsToUsd(owes)} outstanding</span>
+            <span class="dim">${centsToUsd(p.house_charged_cents || 0)} charged · ${centsToUsd(p.house_paid_cents || 0)} paid off</span>
+            ${overLimit ? `<span class="warn-cell"> · over the ${centsToUsd(limit)} limit</span>` : ''}
+            ${!enabled ? '<span class="warn-cell"> · account taken away, the debt still stands</span>' : ''}
+          </div>
+          <button class="btn-primary btn-sm" onclick="openHousePayment('${esc(p.party_id)}', ${owes})">Record a payment</button>
+        </div>
+
+        <!-- 🔑 A form, not two browser prompts. The old flow asked for the
+             amount and the method in separate prompt() dialogs with no way to
+             see the balance while typing and no way back from the second one. -->
+        <div class="house-pay" id="house-pay-form" style="display:none;">
+          <div class="field-grid">
+            <div class="field"><label>Amount</label>
+              <input id="house-pay-amount" type="text" inputmode="decimal" value="${(owes / 100).toFixed(2)}">
+              <div class="hint">Up to ${centsToUsd(owes)} — the database refuses an overpayment.</div></div>
+            <div class="field"><label>How it was paid</label>
+              <select id="house-pay-method">
+                <option value="ZELLE">Zelle</option>
+                <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="BANK_TRANSFER">Bank transfer</option>
+                <option value="OTHER">Other</option>
+              </select></div>
+            <div class="field"><label>Reference <span class="dim">(optional)</span></label>
+              <input id="house-pay-ref" type="text" placeholder="confirmation number, cheque no…"></div>
+          </div>
+          <div class="editor-actions">
+            <button class="btn-primary" id="house-pay-go"
+                    onclick="submitHousePayment('${esc(p.party_id)}', ${owes})">Record payment</button>
+            <button class="btn-sm" onclick="document.getElementById('house-pay-form').style.display='none';">Cancel</button>
+            <span class="one-way-note">This is <b>not revenue</b> — the sale counted when it was charged.
+              It only brings the balance down.</span>
+          </div>
+        </div>` : (p.house_charged_cents
+          ? `<div class="house-owed settled"><div><span class="house-owed-amt">Nothing outstanding</span>
+               <span class="dim">${centsToUsd(p.house_charged_cents)} charged and paid off in full</span></div></div>`
+          : '')}
+    </div>`;
 
   const orderRows = d.orders.length ? d.orders.map(o => `
     <tr${o.voided ? ' style="opacity:.5;"' : ''}>
@@ -2933,22 +3053,32 @@ function renderCustomerProfile(d) {
     </div>`;
 }
 
+// ── Recording a payoff ───────────────────────────────────────────────────────
 // ⚠️ The amount is capped at what is owed, in the page AND in the database.
 // record_house_payment refuses an overpayment outright: taking more than is
 // owed is nearly always a typo or a payment against the wrong person, and
 // silently creating a credit balance would hide both.
-async function recordHousePayment(partyId, owedCents) {
-  const entered = prompt(
-    `How much came in?\n\n${centsToUsd(owedCents)} is outstanding. Enter dollars, or leave as-is to settle it in full.`,
-    (owedCents / 100).toFixed(2),
-  );
-  if (entered === null) return;
-  const amount = Math.round(Number(String(entered).replace(/[^0-9.]/g, '')) * 100);
+function openHousePayment(partyId, owedCents) {
+  const form = document.getElementById('house-pay-form');
+  if (!form) return;
+  form.style.display = 'block';
+  const amt = document.getElementById('house-pay-amount');
+  amt.value = (owedCents / 100).toFixed(2);
+  amt.focus();
+  amt.select();
+}
+
+async function submitHousePayment(partyId, owedCents) {
+  const raw = (document.getElementById('house-pay-amount').value || '').replace(/[^0-9.]/g, '');
+  const amount = Math.round(Number(raw) * 100);
   if (!Number.isFinite(amount) || amount <= 0) return showToast('That is not an amount');
   if (amount > owedCents) return showToast(`That is more than the ${centsToUsd(owedCents)} outstanding`);
 
-  const method = (prompt('How was it paid? ZELLE, CASH, CARD, BANK_TRANSFER or OTHER', 'ZELLE') || 'ZELLE')
-    .trim().toUpperCase();
+  const method = document.getElementById('house-pay-method').value;
+  const reference = (document.getElementById('house-pay-ref').value || '').trim();
+  const btn = document.getElementById('house-pay-go');
+  btn.disabled = true;
+  btn.textContent = 'Recording…';
 
   try {
     const res = await fetch('/.netlify/functions/record-payment', {
@@ -2957,7 +3087,7 @@ async function recordHousePayment(partyId, owedCents) {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
       },
-      body: JSON.stringify({ party_id: partyId, amount_cents: amount, method }),
+      body: JSON.stringify({ party_id: partyId, amount_cents: amount, method, reference: reference || undefined }),
     });
     const d = await res.json();
     if (!res.ok) throw new Error(d.hint || d.error || 'Could not record that payment');
@@ -2970,8 +3100,82 @@ async function recordHousePayment(partyId, owedCents) {
     finLoaded = false;
     if (custOpenId) openCustomer(custOpenId);
   } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Record payment';
     showToast('Could not record it: ' + err.message);
   }
+}
+
+// ── Granting and revoking credit ─────────────────────────────────────────────
+// 🔑 This is a credit decision, not a display setting. create-order.js refuses a
+// house-account sale for anyone without the flag, so this is the only way to
+// open one — and the only way to close it.
+async function setHouseAccount(partyId, body, describe) {
+  try {
+    const res = await fetch('/.netlify/functions/set-house-account', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({ party_id: partyId, ...body }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.hint ? `${d.error} ${d.hint}` : (d.error || 'Could not change that'));
+    showToast(describe(d));
+    // The picker carries the flag, and the New sale form reads it to decide
+    // whether to offer the option at all.
+    await loadCustomersTab(true);
+    if (custOpenId) openCustomer(custOpenId);
+  } catch (err) {
+    showToast('Could not change it: ' + err.message);
+  }
+}
+
+function grantHouseAccount(partyId) {
+  const entered = prompt(
+    'Credit limit in dollars — how much may they run up before it is flagged?\n\n' +
+    'Leave blank for no limit. Going over is a warning at the counter, never a refusal.',
+    '',
+  );
+  if (entered === null) return;   // cancelled: grant nothing
+  const trimmed = String(entered).replace(/[^0-9.]/g, '').trim();
+  const limit_cents = trimmed === '' ? null : Math.round(Number(trimmed) * 100);
+  if (limit_cents !== null && (!Number.isFinite(limit_cents) || limit_cents < 0)) {
+    return showToast('That is not an amount');
+  }
+  setHouseAccount(partyId, { enabled: true, limit_cents },
+    (d) => `${d.name} can now buy on account${d.limit_cents != null ? ` — limit ${centsToUsd(d.limit_cents)}` : ''}`);
+}
+
+function setHouseAccountLimit(partyId, current) {
+  const entered = prompt(
+    'Credit limit in dollars. Leave blank to remove the limit.',
+    current == null ? '' : (current / 100).toFixed(2),
+  );
+  if (entered === null) return;
+  const trimmed = String(entered).replace(/[^0-9.]/g, '').trim();
+  const limit_cents = trimmed === '' ? null : Math.round(Number(trimmed) * 100);
+  if (limit_cents !== null && (!Number.isFinite(limit_cents) || limit_cents < 0)) {
+    return showToast('That is not an amount');
+  }
+  setHouseAccount(partyId, { enabled: true, limit_cents },
+    (d) => d.limit_cents == null ? `${d.name} has no credit limit` : `${d.name}'s limit is ${centsToUsd(d.limit_cents)}`);
+}
+
+function revokeHouseAccount(partyId, owedCents) {
+  // ⚠️ The confirmation says what revoking does NOT do. Taking the account away
+  // reads like closing it, and someone owing money would reasonably expect the
+  // balance to go with it. It does not, and must not.
+  const owedLine = owedCents > 0
+    ? `\n\nThey still owe ${centsToUsd(owedCents)}. That debt STAYS — it remains on their profile and can still ` +
+      `be paid off. Taking the account away only stops new sales going on the tab.`
+    : '';
+  if (!confirm(`Take away this house account?${owedLine}\n\nFuture sales will have to be paid at the time.`)) return;
+  setHouseAccount(partyId, { enabled: false },
+    (d) => d.owed_cents > 0
+      ? `${d.name} can no longer buy on account — ${centsToUsd(d.owed_cents)} still owed`
+      : `${d.name} can no longer buy on account`);
 }
 
 // Which tender the New sale form is describing. The dropdown asks one question

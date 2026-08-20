@@ -72,6 +72,73 @@ async function rpc(fn, args) {
 }
 
 // Money is integer cents end to end. A float here is a bug, not a convenience.
+// Is this customer allowed to buy on credit? Migration 028 records the decision
+// on the party; this is where it is enforced.
+//
+// 🔑 FAILS CLOSED, and only here. Everywhere else in this file a Supabase
+// wobble should not stop a sale — "a till must always take money" — but this is
+// not taking money, it is extending credit. If the permission cannot be read,
+// the honest answer is "ring it up as paid", not "assume they are good for it".
+//
+// ⚠️ It deliberately does NOT block on the credit limit. Over-limit is a
+// warning at the counter, not a refusal — Frank standing in front of a customer
+// is better placed to make that call than a column is.
+async function gateHouseAccount(partyId) {
+  let rows;
+  try {
+    rows = await sbGet(`parties?select=id,display_name,merged_into_id,house_account_enabled&id=eq.${partyId}`);
+  } catch (err) {
+    // The column arrives with 028. Until then, say which migration is missing
+    // rather than silently letting every charge through.
+    const missing = /house_account_enabled/.test(err.detail || err.message || '');
+    return { ok: false, status: missing ? 503 : 502, body: {
+      error: missing
+        ? 'House-account permissions are not set up in the database yet.'
+        : 'Could not check whether that customer has a house account — the sale was not recorded.',
+      hint: missing
+        ? 'Apply replace-square-phase1/fixes/028-house-account-grants.sql, then reload.'
+        : 'Try again, or ring it up as paid.',
+    } };
+  }
+
+  if (!rows.length) {
+    return { ok: false, status: 404, body: { error: 'That customer no longer exists — pick again' } };
+  }
+  const p = rows[0];
+  if (p.merged_into_id) {
+    return { ok: false, status: 409, body: {
+      error: 'That customer record was merged into another one — pick the surviving record.' } };
+  }
+  if (!p.house_account_enabled) {
+    return { ok: false, status: 403, body: {
+      error: `${p.display_name || 'That customer'} does not have a house account.`,
+      hint: 'Open them on the Customers tab and give them one, or take payment now.' } };
+  }
+  return { ok: true };
+}
+
+async function sbGet(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: {
+        apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    const body = await res.text();
+    if (!res.ok) {
+      const err = new Error(`Supabase returned ${res.status}`);
+      err.detail = body.slice(0, 400);
+      throw err;
+    }
+    return JSON.parse(body);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function cents(v, label) {
   if (v === null || v === undefined || v === '') return 0;
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
@@ -152,6 +219,27 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers, body: JSON.stringify({
           error: 'Pick or name the customer whose house account this goes on' }) };
       }
+
+      // ── The gate (added 2026-08-20, migration 028) ─────────────────────────
+      // 🚨 CREDIT IS GRANTED PER PERSON AND ENFORCED HERE. The New sale form
+      // hides the option for anyone without an account, but a rule that lives
+      // only in the page it is drawn on is not a rule — this endpoint is
+      // reachable directly, and the page can be stale about who was revoked
+      // five minutes ago.
+      //
+      // 🔑 A BRAND-NEW CUSTOMER CANNOT BE CHARGED TO A TAB. There is nobody to
+      // have granted credit to yet: create_manual_order would insert the party
+      // and the charge in the same breath, which is precisely the decision
+      // Frank asked to stop being automatic. Sell it as paid, or grant the
+      // account first — the message says so.
+      if (!input.party_id) {
+        return { statusCode: 403, headers, body: JSON.stringify({
+          error: 'A new customer cannot start on a house account.',
+          hint: 'Ring this sale up as paid, or add them on the Customers tab and give them a house account there first.' }) };
+      }
+      const gate = await gateHouseAccount(input.party_id);
+      if (!gate.ok) return { statusCode: gate.status, headers, body: JSON.stringify(gate.body) };
+
       paymentState = 'PAID';
     }
     const channel = String(input.channel || 'POS').toUpperCase();

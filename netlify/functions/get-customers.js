@@ -99,7 +99,12 @@ exports.handler = async (event) => {
 
   try {
     const [parties, orders, owed] = await Promise.all([
-      sb('parties?select=id,display_name,email,phone,kind,notes&merged_into_id=is.null&order=display_name'),
+      // ⚠️ house_account_enabled ARRIVES WITH MIGRATION 028, and unlike the
+      // balance below this select is NOT optional — if the column is missing the
+      // whole picker fails, and the picker is the till's path to a sale. Deploy
+      // order matters: schema first, then this code. It was applied on
+      // 2026-08-20, before this shipped.
+      sb('parties?select=id,display_name,email,phone,kind,notes,house_account_enabled,house_account_limit_cents&merged_into_id=is.null&order=display_name'),
       // ⚠️ Cancelled orders are excluded deliberately. 19 were cancelled on
       // 2026-08-19 as never-real, and counting them would date a customer's
       // "last order" to a sale that never happened.
@@ -125,6 +130,11 @@ exports.handler = async (event) => {
         email: p.email || null,
         phone: p.phone || null,
         kind: p.kind,
+        // Who may buy on credit (migration 028). The New sale form reads this
+        // to decide whether to offer the house-account option at all — though
+        // create-order.js is what actually enforces it.
+        house_account_enabled: p.house_account_enabled === true,
+        house_account_limit_cents: p.house_account_limit_cents ?? null,
         order_count: s.order_count,
         last_order_at: s.last_order_at,
         // 0 when nothing is owed, and also 0 before migration 025 — the two are

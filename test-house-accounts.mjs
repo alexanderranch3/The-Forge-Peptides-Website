@@ -54,7 +54,14 @@ console.log('\n1. charging a sale to a tab');
     httpMethod: 'POST', headers: AUTH, body: JSON.stringify({ ...base, ...over }),
   });
 
-  stub({ 'rpc/create_manual_order': { status: 200, body: { order_id: 'o1', order_no: 'FP-000500', total_cents: 27500 } } });
+  // 🔑 SINCE MIGRATION 028, charging a tab requires the party to have been
+  // GRANTED a house account — create-order.js looks it up and refuses without
+  // it. Granting is a deliberate decision now, so the stub has to say so.
+  // The gate itself is covered in test-house-account-grants.mjs.
+  const granted = { 'parties?select': { status: 200, body: [{
+    id: PARTY, display_name: 'Yader Simpson', merged_into_id: null, house_account_enabled: true }] } };
+
+  stub({ ...granted, 'rpc/create_manual_order': { status: 200, body: { order_id: 'o1', order_no: 'FP-000500', total_cents: 27500 } } });
   await post({ tender_type: 'HOUSE_ACCOUNT' });
   const sent = calls.find(c => c.url.includes('create_manual_order')).body.p;
   ok('the tender type reaches the database', sent.tender_type, 'HOUSE_ACCOUNT');
@@ -68,6 +75,15 @@ console.log('\n1. charging a sale to a tab');
   const normal = calls.find(c => c.url.includes('create_manual_order')).body.p;
   ok('a normal sale is untouched', normal.payment_state, 'AWAITING_PAYMENT');
   ok('and defaults are preserved', normal.tender_type, 'ZELLE');
+
+  // 🚨 The same sale, to someone who was never given an account, is refused —
+  // and nothing reaches the database.
+  stub({ 'parties?select': { status: 200, body: [{
+    id: PARTY, display_name: 'Cary Swett', merged_into_id: null, house_account_enabled: false }] },
+    'rpc/create_manual_order': { status: 200, body: { order_id: 'o9', order_no: 'FP-000599' } } });
+  const refused = await post({ tender_type: 'HOUSE_ACCOUNT' });
+  ok('no house account, no credit', refused.statusCode, 403);
+  okTrue('and the sale was not written', !calls.some(c => c.url.includes('create_manual_order')));
 
   // Frank's own vials and give-aways are not owed to anybody.
   stub({});
@@ -85,12 +101,19 @@ console.log('\n1. charging a sale to a tab');
   okTrue('and is told to name them', /name the customer/i.test(json(res).error));
   ok('🚨 and nothing was written', calls.filter(c => c.method === 'POST').length, 0);
 
-  // A new customer is fine — migration 025's trigger attaches the charge to
-  // whichever party create_manual_order ends up creating.
+  // 🚨 CHANGED 2026-08-20 (migration 028). A newly NAMED customer used to be
+  // allowed to open a tab, on the reasoning that 025's trigger would attach the
+  // charge to whichever party create_manual_order created. That is exactly the
+  // automatic credit decision Frank asked to stop: "I don't wanna give a house
+  // account to everybody." There is nobody to have granted credit to yet, so
+  // the party and the debt would be created in the same breath.
   stub({ 'rpc/create_manual_order': { status: 200, body: { order_id: 'o2', order_no: 'FP-000502' } } });
   res = await fresh('create-order').handler({ httpMethod: 'POST', headers: AUTH, body: JSON.stringify({
     ...base, party_id: undefined, customer: { name: 'A New Friend' }, tender_type: 'HOUSE_ACCOUNT' }) });
-  ok('a newly named customer can', res.statusCode, 200);
+  ok('a brand-new customer cannot start on credit', res.statusCode, 403);
+  okTrue('and is told to sell it paid or grant the account first',
+    /paid|Customers tab/i.test(json(res).hint || ''));
+  ok('🚨 and nothing was written', calls.filter(c => c.method === 'POST').length, 0);
 
   stub({});
   res = await post({ tender_type: 'BITCOIN' });
