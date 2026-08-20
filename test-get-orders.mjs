@@ -122,6 +122,14 @@ ok('named',                  fp.customerName, 'Leo the Den');
 ok('itemised',               fp.items.map((i) => i.name), ['Retatrutide 10mg']);
 ok('and reads as paid',      fp.status, 'PAID');
 
+console.log('\n— 🚨 orderId is the SQUARE id when there is one —');
+// It is what the page hands to set-order-status (a Square GET) and
+// set-fulfillment (matched as square_id). Both 404 on a dashboard uuid, so
+// "just use our own id" silently breaks Mark Paid and Ready/Shipped.
+ok('a synced order is addressed by its Square id', fp.orderId, 'SQ1004');
+ok('with the dashboard id alongside it',           fp.dashboardId, 'uuid-1004');
+ok('and it is not flagged dashboard-only',         fp.dashboardOnly, false);
+
 console.log('\n— a shipped order keeps everything needed to post it —');
 const sh = d.orders.find((o) => o.orderNumber === 'FP-001067');
 ok('marked for shipping', sh.fulfillmentType, 'SHIP');
@@ -146,6 +154,14 @@ routes = base([SQUARE_DUP]);
 d = await call();
 ok('no duplicate', d.orders.length, 2);
 ok('matched on the square id', d.orders.filter((o) => o.orderNumber === 'FP-001004').length, 1);
+
+// A counter sale has no Square id, so it keeps the dashboard uuid and is
+// flagged dashboardOnly — which is what routes it by orderNumber instead.
+routes = base([]);
+routes['v_admin_orders'] = { status: 200, body: [{ ...FEED_ROW, square_id: null, order_id: 'uuid-counter' }] };
+const counter = (await call()).orders[0];
+ok('a counter sale keeps the dashboard id', counter.orderId, 'uuid-counter');
+ok('and is flagged dashboard-only',         counter.dashboardOnly, true);
 ok('and nothing was treated as stray', d.source, 'dashboard');
 
 console.log('\n— ⚠️ if the feed cannot be read, the old Square path still works —');

@@ -233,9 +233,17 @@ async function fetchAdminOrders(since, aliasLinesPromise) {
       || null;
 
     return {
-      orderId:     r.order_id,
-      // Carried so a Square order already represented here can be recognised
-      // and not shown twice — the two systems key orders differently.
+      // 🚨 THE SQUARE ID WHEN THERE IS ONE, the dashboard uuid otherwise — and
+      // NOT simply the uuid, which is the obvious-looking choice and breaks two
+      // buttons. `orderId` is what the page hands to set-order-status (which
+      // does a Square GET on it) and to set-fulfillment (which matches it as
+      // square_id). Both would 404 on a uuid. void-order copes either way — it
+      // sniffs the shape — but the other two do not, and this preserves exactly
+      // what get-orders emitted before the inversion.
+      orderId:     r.square_id || r.order_id,
+      // The dashboard's own id, for anything that needs to address this row
+      // here rather than in Square.
+      dashboardId: r.order_id,
       squareId:    r.square_id || null,
       orderNumber: r.order_no || '',
       // 🔑 The order's own state is read FIRST, so a voided sale reads as
