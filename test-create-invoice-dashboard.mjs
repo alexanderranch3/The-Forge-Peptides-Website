@@ -14,6 +14,7 @@
 // 🚨 AND THAT ORDER_SOURCE DEFAULTS TO SQUARE. Turning it on is a one-way door
 // for every order placed while it is set, so it must never happen by accident.
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
 const require = createRequire(import.meta.url);
 
 let pass = 0, fail = 0;
@@ -244,6 +245,63 @@ res = await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
 okTrue('it did not succeed', res.statusCode >= 400, `got ${res.statusCode}`);
 okTrue('🚨 and nothing was written', !calls.some((c) => c.url.includes('rpc/create_manual_order')));
 global.fetch = stillFetch;
+
+
+// ── The owner's free-order code ──────────────────────────────────────────────
+console.log('\n— 🚨 the owner code is NOT in the source —');
+// This repository is PUBLIC. A 100%-off code committed here could be read by
+// anyone and used to empty the shelf, so it lives only in an env var.
+{
+  const src = readFileSync('./netlify/functions/create-invoice.js', 'utf8');
+  okTrue('no literal code string in create-invoice.js',
+    /OWNER_PROMO_CODE/.test(src) && !/Drezzle/i.test(src));
+}
+
+console.log('\n— with OWNER_PROMO_CODE unset, the code does not exist —');
+// ⚠️ Fails CLOSED: an unset variable must not mean "any code works".
+delete process.env.OWNER_PROMO_CODE;
+process.env.ORDER_SOURCE = 'dashboard';
+priorOrders = [{ id: 'x' }];
+calls = []; fn = load();
+await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
+  items: [{ id: 'retatrutide-10mg', name: 'Retatrutide 10mg', price: 160, qty: 1 }],
+  customerName: 'Owner', customerEmail: 'ftt1598@gmail.com', promoCode: 'anything',
+  fulfillment: 'Local Pickup',
+}) });
+let op = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
+ok('nothing is discounted', op.discount_cents, 0);
+ok('and it is an ordinary sale', op.purpose, 'SALE');
+
+console.log('\n— with it set, the order is free —');
+process.env.OWNER_PROMO_CODE = 'test-secret-code';
+calls = []; fn = load();
+await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
+  items: [{ id: 'retatrutide-10mg', name: 'Retatrutide 10mg', price: 160, qty: 1 }],
+  customerName: 'Owner', customerEmail: 'ftt1598@gmail.com', promoCode: 'test-secret-code',
+  fulfillment: 'Ship', street: '9649 Stirling Bridge DR', city: 'Columbia',
+  state: 'MD', zip: '21046', shippingAmount: 25,
+}) });
+op = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
+// 100% of product + shipping, the same ORDER scope the 10% codes use.
+ok('everything comes off, shipping included', op.discount_cents, 16000 + 2500);
+// 🚨 The accounting point: a $0 SALE would carry real COGS against no income
+// and read as a LOSS. INTERNAL moves stock and never reaches revenue.
+ok('🚨 booked as INTERNAL, not a sale', op.purpose, 'INTERNAL');
+ok('and not left awaiting payment',      op.payment_state, 'PAID');
+ok('the address still travels',          op.fulfillment.address_line1, '9649 Stirling Bridge DR');
+ok('and the stock still moves',          op.lines[0].variant_id, VARIANT);
+
+console.log('\n— a wrong code is just a wrong code —');
+calls = []; fn = load();
+await fn.handler({ httpMethod: 'POST', body: JSON.stringify({
+  items: [{ id: 'retatrutide-10mg', name: 'Retatrutide 10mg', price: 160, qty: 1 }],
+  customerName: 'Chancer', customerEmail: 'chancer@example.com', promoCode: 'test-secret-cod',
+  fulfillment: 'Local Pickup',
+}) });
+op = calls.find((c) => c.url.includes('rpc/create_manual_order')).body.p;
+ok('one character off gets nothing', op.discount_cents, 0);
+ok('and stays a real sale',          op.purpose, 'SALE');
+delete process.env.OWNER_PROMO_CODE;
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

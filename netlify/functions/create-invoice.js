@@ -215,8 +215,35 @@ async function findOrCreateCustomer(name, email, phone) {
 // Returns the valid promo code string, or null if invalid.
 // Codes cannot be stacked — only one applies per order.
 
+// How much each code takes off. 🔑 One place, so the Square path and the
+// dashboard path can never disagree about what a customer was charged.
+const PROMO_PERCENT = { LOYAL10: 10, FORGE10: 10, OWNER: 100 };
+const promoPercent = (label) => PROMO_PERCENT[label] || 0;
+
 async function validatePromo(promoCode, customerId, customerEmail) {
   if (!promoCode) return null;
+
+  // ── The owner's own code — 100% off, for placing real test orders ──────────
+  //
+  // 🚨 THE CODE ITSELF IS NEVER IN THIS FILE, and that is not a style choice:
+  // THIS REPOSITORY IS PUBLIC. A 100%-off code committed here could be read by
+  // anyone and used to empty the shelf. It lives in OWNER_PROMO_CODE in Netlify,
+  // and if that variable is unset the code simply does not exist — this returns
+  // null and the order is charged in full. Fails closed.
+  //
+  // 🔑 An order using it is INTERNAL, not a SALE (see createOrderInDashboard).
+  // It moves stock — the vial really does leave the shelf — but never reaches
+  // revenue. Booked as a £0 SALE it would carry real COGS against no income and
+  // show up as a LOSS in the books, which is worse than wrong: it is plausible.
+  //
+  // ⚠️ Every use is logged loudly. If this code ever leaks, the orders tab will
+  // show INTERNAL orders nobody placed and the log will say so — rotate the
+  // variable and it is dead immediately.
+  const ownerCode = (process.env.OWNER_PROMO_CODE || '').trim();
+  if (ownerCode && promoCode.trim() === ownerCode) {
+    console.warn(`OWNER PROMO USED — free order for ${customerEmail || 'unknown email'}`);
+    return 'OWNER';
+  }
 
   // LOYAL10 — 10% off every order, no restrictions
   if (promoCode === 'LOYAL10') return 'LOYAL10';
@@ -316,7 +343,13 @@ async function createOrderInDashboard({
   const applyFlTax = fulfillment === 'Local Pickup' || String(state || '').toUpperCase() === 'FL';
   const taxCents   = applyFlTax ? Math.round(productCents * (FL_TAX_RATE / 100)) : 0;
   // ORDER scope in Square, so it covers shipping too — proven by FP-001067.
-  const discCents  = promoValid ? Math.round((productCents + shipCents) * 0.10) : 0;
+  const pct        = promoPercent(promoValid);
+  const discCents  = pct ? Math.round((productCents + shipCents) * (pct / 100)) : 0;
+
+  // 🔑 An owner test order is INTERNAL, not a SALE. It moves stock because the
+  // vial really does leave, but it is not income — and a $0 SALE would carry
+  // real COGS against no revenue and read as a loss.
+  const isOwner = promoValid === 'OWNER';
 
   // 🔑 create_manual_order takes a VARIANT id, so the site's catalogue id has to
   // be resolved first. Migration 020 pinned every storefront variant to its site
@@ -355,10 +388,11 @@ async function createOrderInDashboard({
   const isShip = fulfillment === 'Ship';
   const payload = {
     client_uid: `web-${idempotencyKey()}`,
-    purpose: 'SALE',
+    purpose: isOwner ? 'INTERNAL' : 'SALE',
     // Zelle is paid after the fact, so a web order starts unpaid — exactly as
     // it did through Square. set-order-status is what marks it paid later.
-    payment_state: 'AWAITING_PAYMENT',
+    // Nothing is owed on a free order, so it does not sit in "awaiting Zelle".
+    payment_state: isOwner ? 'PAID' : 'AWAITING_PAYMENT',
     channel: 'WEBSITE',
     tax_cents: taxCents,
     discount_cents: discCents,
@@ -502,12 +536,18 @@ async function createOrder(orderNum, customerId, items, shippingAmount, shipping
   }
 
   if (promoValid) {
-    const promoLabel = promoValid === 'LOYAL10'
-      ? 'LOYAL10 — 10% Loyal Customer Discount'
-      : 'FORGE10 — 10% New Customer Discount';
+    // 🔑 The percentage comes from the same table the dashboard path uses, so
+    // the two can never disagree about what a customer was charged — a hardcoded
+    // '10' here would have silently billed an owner test order in full if the
+    // ORDER_SOURCE switch were ever flipped back.
+    const promoLabel = {
+      LOYAL10: 'LOYAL10 — 10% Loyal Customer Discount',
+      FORGE10: 'FORGE10 — 10% New Customer Discount',
+      OWNER:   'Owner test order — 100%',
+    }[promoValid] || `${promoValid} discount`;
     orderBody.order.discounts = [{
       name: promoLabel,
-      percentage: '10',
+      percentage: String(promoPercent(promoValid)),
       scope: 'ORDER',
     }];
   }
