@@ -56,7 +56,14 @@ function shapeRow(r) {
     lines_missing_cost: r.lines_missing_cost,
     suggested_buy:   r.suggested_buy,
     last_sold_at:    r.last_sold_at,
+    // 🚨 INERT Square-era residue — nothing reads it, and it hides nothing.
+    // Retatrutide 10mg carries it today with 36 vials on hand and 15 sold.
+    // `archived_at` below is the live flag; see migration 029.
     is_hidden:       r.is_hidden,
+    // Retired from PURCHASING (029). Stock, value and sellability are
+    // deliberately unaffected — archiving is a buying decision.
+    archived_at:     r.archived_at || null,
+    archived_reason: r.archived_reason || null,
   };
 }
 
@@ -110,14 +117,26 @@ exports.handler = async (event) => {
     // Totals computed here, once, so the page never sums a filtered view by
     // accident and quietly reports a different number than the tiles.
     const totals = rows.reduce((a, r) => {
+      // 🔑 Units and value count EVERYTHING, archived included. Those vials are
+      // on the shelf and are worth what they cost; a stock total that quietly
+      // omitted them would not reconcile against a physical count, which is the
+      // one number that beats every inference drawn from the ledger.
       a.units        += r.on_hand;
       a.cost_cents   += r.stock_cost_cents   || 0;
       a.retail_cents += r.stock_retail_cents || 0;
-      if (r.status === 'OUT' || r.status === 'LOW') a.needs_reorder += 1;
+      // 🚨 Archived products are NOT things to reorder — that is the whole
+      // feature. The view already zeroes their suggested_buy; this keeps the
+      // tile agreeing with the list beneath it.
+      if (!r.archived_at && (r.status === 'OUT' || r.status === 'LOW')) a.needs_reorder += 1;
       if (r.status === 'SLOW' || r.status === 'NO_SALES') a.parked_cents += r.stock_cost_cents || 0;
+      if (r.archived_at) {
+        a.archived_products += 1;
+        a.archived_cents += r.stock_cost_cents || 0;
+      }
       if (r.lines_missing_cost > 0) a.products_missing_cost += 1;
       return a;
-    }, { units: 0, cost_cents: 0, retail_cents: 0, needs_reorder: 0, parked_cents: 0, products_missing_cost: 0 });
+    }, { units: 0, cost_cents: 0, retail_cents: 0, needs_reorder: 0, parked_cents: 0,
+         archived_products: 0, archived_cents: 0, products_missing_cost: 0 });
 
     return {
       statusCode: 200, headers,

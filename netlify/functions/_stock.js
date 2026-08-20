@@ -150,10 +150,16 @@ function shortageMessage(shortages) {
  * regardless of which system we believe about quantities. Selling it would mean
  * taking money for something that physically cannot go out.
  *
- * 🔑 It also cannot be expressed with is_hidden: v_inventory_dashboard FILTERS
- * hidden variants, so a hidden product reaches the stock map as "unknown", and
- * unknown fails OPEN. MOTS-C was already hidden and would have sold anyway.
- * v_unfulfillable ignores is_hidden deliberately.
+ * 🔑 It also cannot be expressed with is_hidden — and the reason is stronger
+ * than this comment used to claim. It said "v_inventory_dashboard FILTERS hidden
+ * variants, so a hidden product reaches the stock map as unknown, and unknown
+ * fails OPEN". CHECKED 2026-08-20 AND THAT FILTER DOES NOT EXIST: all 11 hidden
+ * variants are in the view, including Retatrutide 10mg with 36 vials on hand and
+ * 15 sold. is_hidden is INERT Square-era import residue that nothing reads, so
+ * hiding a product would not have stopped it selling at all. MOTS-C was already
+ * hidden and would indeed have sold anyway — for that reason, not this one.
+ * v_unfulfillable ignores is_hidden deliberately, and migration 029's
+ * archived_at is likewise about PURCHASING only, never about sellability.
  */
 async function fetchBlocked() {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;

@@ -140,7 +140,10 @@ async function fetchStorefront() {
  */
 async function gatherSources() {
   const [inventory, unfulfillable, blockedVariants, unmappedSales, orders, storefront] = await Promise.all([
-    sb('v_inventory_dashboard?select=variant_id,product_name,variant_name,is_hidden,site_catalog_id,on_hand,price_cents,unit_cost_cents,status'),
+    // `is_hidden` was selected here and read by nothing. It is inert Square-era
+    // residue (see _stock.js and migration 029), so fetching it only invited a
+    // future probe to trust it.
+    sb('v_inventory_dashboard?select=variant_id,product_name,variant_name,site_catalog_id,on_hand,price_cents,unit_cost_cents,status'),
     sb('v_unfulfillable?select=variant_id,site_catalog_id,product_name,variant_name,reason,on_hand'),
     sb('variants?select=id,name,sku,site_catalog_id,unfulfillable_reason,updated_at&fulfillable=eq.false'),
     sb('v_product_sales?select=order_no,placed_at,name_at_sale,quantity,line_item_id,revenue_cents&variant_id=is.null'),

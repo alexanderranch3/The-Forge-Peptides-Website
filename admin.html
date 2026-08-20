@@ -333,6 +333,16 @@
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+    /* ── Archived products (added 2026-08-20) ────────────────────────────── */
+    /* Muted, never hidden: these are real vials with real money in them. */
+    .badge-archived { background: rgba(108,117,125,0.18); color: #9aa0a6; }
+    /* The action column is the narrowest on the table and "Restock again" was
+       breaking across two lines mid-phrase. Let the buttons keep their words. */
+    td.actions .btn-sm { white-space: nowrap; }
+    tr.archived-row td { opacity: .62; }
+    tr.archived-row:hover td { opacity: .85; }
+    .arch-why { color: #666; font-size: .72rem; margin-top: 3px; line-height: 1.45; }
+
     /* ── House account panel (added 2026-08-20) ──────────────────────────── */
     /* Always on the customer profile, whether or not they have an account —
        the answer to "how do I give this person one?" has to be somewhere. */
@@ -569,6 +579,11 @@
           <div class="value" id="inv-reorder">—</div><div class="note">under 1 month of cover</div></div>
         <div class="stat-card warn"><div class="label">Capital not moving</div>
           <div class="value" id="inv-parked">—</div><div class="note" id="inv-parked-note"></div></div>
+        <!-- Shown only once something has been archived — a permanent "0
+             archived" tile is noise on a screen that already has plenty. -->
+        <div class="stat-card" id="inv-archived-card" style="display:none;">
+          <div class="label">Winding down</div>
+          <div class="value" id="inv-archived">—</div><div class="note" id="inv-archived-note"></div></div>
       </div>
 
       <div class="alert-band" id="inv-alert" style="display:none;">
@@ -590,6 +605,7 @@
         </table>
       </div>
       <div id="inv-reorder-none" class="no-orders" style="display:none;">Nothing needs reordering.</div>
+      <p class="sub-note" id="inv-reorder-archived-note" style="display:none;margin:10px 0 0;"></p>
 
       <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">All stock</h2>
       <p class="sub-note" id="inv-window-note"></p>
@@ -1722,6 +1738,15 @@ function renderInventory(data) {
   document.getElementById('inv-cost').textContent   = money(t.cost_cents || 0);
   document.getElementById('inv-retail').textContent = money(t.retail_cents || 0) + ' at retail';
   document.getElementById('inv-reorder').textContent = t.needs_reorder ?? 0;
+  const archCard = document.getElementById('inv-archived-card');
+  if (t.archived_products) {
+    archCard.style.display = '';
+    document.getElementById('inv-archived').textContent = money(t.archived_cents || 0);
+    document.getElementById('inv-archived-note').textContent =
+      `${t.archived_products} product${t.archived_products === 1 ? '' : 's'} not being restocked`;
+  } else {
+    archCard.style.display = 'none';
+  }
   document.getElementById('inv-parked').textContent  = money(t.parked_cents || 0);
   document.getElementById('inv-parked-note').textContent = t.cost_cents
     ? Math.round((t.parked_cents / t.cost_cents) * 100) + '% of stock value' : '';
@@ -1732,7 +1757,12 @@ function renderInventory(data) {
     `Margin is blank wherever any sold unit has no recorded cost.`;
 
   // The headline: the fastest movers sitting at or near zero.
-  const critical = items.filter(i => i.status === 'OUT' || i.status === 'LOW')
+  // 🚨 ARCHIVED PRODUCTS ARE EXCLUDED — the entire point of archiving. Before
+  // this, the top of the list was Retatrutide 12mg with "suggested buy 20", a
+  // size retired on 2026-07-31 that is not in CATALOG and cannot be sold on the
+  // site at any price. The view already zeroes their suggested_buy; this keeps
+  // the list agreeing with it.
+  const critical = items.filter(i => !i.archived_at && (i.status === 'OUT' || i.status === 'LOW'))
                         .sort((a, b) => b.units_per_month - a.units_per_month);
   const band = document.getElementById('inv-alert');
   if (critical.length) {
@@ -1763,9 +1793,22 @@ function renderInventory(data) {
       <td class="num"><strong>${i.suggested_buy}</strong></td>
     </tr>`).join('');
   document.getElementById('inv-reorder-none').style.display = critical.length ? 'none' : 'block';
+  // Says how many were left out, so an empty or short list is explained rather
+  // than looking like the reorder check silently stopped working.
+  const hiddenByArchive = items.filter(i => i.archived_at && (i.status === 'OUT' || i.status === 'LOW')).length;
+  const archNote = document.getElementById('inv-reorder-archived-note');
+  archNote.innerHTML = hiddenByArchive
+    ? `<b>${hiddenByArchive}</b> archived product${hiddenByArchive === 1 ? ' is' : 's are'} out or low and deliberately ` +
+      `not listed — you are not restocking ${hiddenByArchive === 1 ? 'it' : 'them'}.`
+    : '';
+  archNote.style.display = hiddenByArchive ? 'block' : 'none';
 
   const ab = document.getElementById('inv-all-body');
-  ab.innerHTML = items.map(i => {
+  // Archived products sink to the bottom but are never hidden — they are real
+  // vials with real money in them, and a stock list that omits stock is a stock
+  // list nobody can reconcile against a physical count.
+  const ordered = [...items].sort((a, b) => (a.archived_at ? 1 : 0) - (b.archived_at ? 1 : 0));
+  ab.innerHTML = ordered.map(i => {
     // A missing cost is flagged rather than silently shown as a blank cell --
     // it is the reason the margin beside it is absent.
     const cost = i.unit_cost_cents == null
@@ -1776,8 +1819,16 @@ function renderInventory(data) {
     const cover = i.months_cover == null
       ? '<span class="dim">—</span>'
       : `<span class="${i.months_cover > 12 ? 'warn-cell' : ''}">${i.months_cover.toFixed(1)}</span>`;
-    return `<tr>
-      <td>${esc(invName(i))}</td>
+    // 🔑 The status badge is kept ALONGSIDE the archived badge, never replaced
+    // by it. An archived product that is OUT is still out, and that matters when
+    // deciding whether to chase the last few.
+    const archived = !!i.archived_at;
+    const archBadge = archived
+      ? ` <span class="badge badge-archived" title="${esc(i.archived_reason || 'Not being restocked')}">ARCHIVED</span>`
+      : '';
+    return `<tr class="${archived ? 'archived-row' : ''}">
+      <td>${esc(invName(i))}${archBadge}${archived && i.archived_reason
+        ? `<div class="arch-why">${esc(i.archived_reason)}</div>` : ''}</td>
       <td>${invBadge(i.status)}</td>
       <td class="num">${i.on_hand}</td>
       <td class="num">${i.units_90d}</td>
@@ -1787,9 +1838,64 @@ function renderInventory(data) {
       <td class="num">${cost}</td>
       <td class="num">${margin}</td>
       <td class="num">${money(i.stock_cost_cents || 0)}</td>
-      <td><button class="btn-sm" onclick="openAdjust('${i.variant_id}')" title="Record a count, damage or a return">Adjust</button></td>
+      <td class="actions">
+        <button class="btn-sm" onclick="openAdjust('${i.variant_id}')" title="Record a count, damage or a return">Adjust</button>
+        ${archived
+          ? `<button class="btn-sm" onclick="restoreVariant('${i.variant_id}')" title="Start reordering this again">Restock again</button>`
+          : `<button class="btn-sm" onclick="archiveVariant('${i.variant_id}')" title="Stop reordering this. Stock and sales are unaffected.">Archive</button>`}
+      </td>
     </tr>`;
   }).join('');
+}
+
+// ── Archiving (added 2026-08-20, migration 029) ──────────────────────────────
+// 🚨 A BUYING DECISION AND NOTHING ELSE. Archiving stops the reorder list
+// suggesting a restock. It does not touch stock, value, the ledger or the
+// storefront — the remaining vials stay on the shelf and stay sellable, because
+// selling through what is left is the point of archiving rather than deleting.
+async function setVariantArchived(variantId, archived, reason) {
+  try {
+    const res = await fetch('/.netlify/functions/set-variant-archived', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
+      },
+      body: JSON.stringify({ variant_id: variantId, archived, reason }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.hint ? `${d.error} ${d.hint}` : (d.error || 'Could not change that'));
+    const name = d.variant && d.variant !== d.product ? `${d.product} · ${d.variant}` : d.product;
+    showToast(archived
+      // The toast names the stock that is staying put, because "archive" reads
+      // like "delete" and the vials are the thing worth being sure about.
+      ? `${name} archived — ${d.on_hand} vial${d.on_hand === 1 ? '' : 's'} still on the shelf and still sellable`
+      : `${name} back on the reorder list`);
+    invLoaded = false;
+    loadInventory();
+    purLoaded = false;   // the Purchasing pickers read the same product list
+  } catch (err) {
+    showToast('Could not change it: ' + err.message);
+  }
+}
+
+function archiveVariant(variantId) {
+  const i = (invItems || []).find(x => x.variant_id === variantId);
+  const name = i ? invName(i) : 'this product';
+  const stockNote = i && i.on_hand > 0
+    ? `\n\nThe ${i.on_hand} vial${i.on_hand === 1 ? '' : 's'} you hold (${money(i.stock_cost_cents || 0)} at cost) ` +
+      `STAY in stock and stay sellable — archiving only stops it being suggested for reorder.`
+    : '';
+  const reason = prompt(
+    `Stop restocking ${name}?${stockNote}\n\nWhy, in a few words (optional):`,
+    '');
+  if (reason === null) return;
+  setVariantArchived(variantId, true, reason.trim());
+}
+
+function restoreVariant(variantId) {
+  const i = (invItems || []).find(x => x.variant_id === variantId);
+  setVariantArchived(variantId, false, null);
 }
 
 // ── New sale (POS) ───────────────────────────────────────────────────────────
