@@ -36,6 +36,34 @@ const { CATALOG } = require('./_catalog');
 // 2026-08-19 — test-stock-gate.mjs caught the ReferenceError immediately.
 class ValidationError extends Error {}
 
+// ── Step 5 of leaving Square: where a web order is WRITTEN ───────────────────
+//
+// 🚨 OFF BY DEFAULT, AND THIS IS A ONE-WAY DOOR WHEN IT IS ON. With
+// ORDER_SOURCE=dashboard the checkout stops creating Square orders entirely, so
+// orders placed after the switch exist HERE AND NOWHERE ELSE. There is no
+// rolling those back into Square afterwards.
+//
+// 🔑 The switch exists so the same code can be proved with a real order before
+// it becomes the only path. Flip it in Netlify → Environment variables
+// (--context production), reload, place an order, check it landed — address,
+// stock, revenue — and flip it back if anything is off.
+// A plain Supabase read. This file talks to Supabase only through rpc() today,
+// which is a POST — resolving a variant needs a GET.
+async function sbGet(path) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('Supabase is not configured.');
+  const res = await fetch(`${url}/rest/v1/${path}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Supabase returned ${res.status}`);
+  return res.json();
+}
+
+const orderSource = () =>
+  String(process.env.ORDER_SOURCE || 'square').trim().toLowerCase() === 'dashboard'
+    ? 'dashboard' : 'square';
+
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
@@ -187,11 +215,34 @@ async function findOrCreateCustomer(name, email, phone) {
 // Returns the valid promo code string, or null if invalid.
 // Codes cannot be stacked — only one applies per order.
 
-async function validatePromo(promoCode, customerId) {
+async function validatePromo(promoCode, customerId, customerEmail) {
   if (!promoCode) return null;
 
   // LOYAL10 — 10% off every order, no restrictions
   if (promoCode === 'LOYAL10') return 'LOYAL10';
+
+  // ── FORGE10 on the dashboard path (step 5) ─────────────────────────────────
+  // 🔑 Same question, asked of the system that now holds the orders: has this
+  // email bought before? Square's customer id does not exist on this path.
+  //
+  // ⚠️ IT KEEPS THE ORIGINAL STANCE: if the answer cannot be established, the
+  // discount is DENIED. A first-order discount that cannot be verified is a
+  // repeatable discount, and handing one out is worse than refusing one.
+  if (promoCode === 'FORGE10' && !customerId) {
+    if (!customerEmail) return null;
+    try {
+      const parties = await sbGet(
+        `parties?select=id&email=eq.${encodeURIComponent(customerEmail)}&merged_into_id=is.null`);
+      if (!parties.length) return 'FORGE10';   // never seen — genuinely a first order
+      const ids = parties.map((x) => x.id).join(',');
+      const prior = await sbGet(
+        `orders?select=id&purpose=eq.SALE&state=neq.CANCELED&party_id=in.(${ids})&limit=1`);
+      return prior.length ? null : 'FORGE10';
+    } catch (err) {
+      console.error('FORGE10 dashboard lookup failed:', err.message);
+      return null;
+    }
+  }
 
   // FORGE10 — 10% off first order only.
   // Was: counted the customer's past INVOICES. Since 2026-08-13 no invoices are
@@ -232,6 +283,132 @@ async function validatePromo(promoCode, customerId) {
 
 const FL_TAX_RATE = 7.0; // Florida state (6%) + Miami-Dade county surtax (1%)
 const FL_TAX_UID  = 'fl-sales-tax';
+
+/**
+ * Write the order into the DASHBOARD instead of Square (step 5).
+ *
+ * 🔑 THE MONEY RULES ARE MIRRORED FROM SQUARE'S, not reinvented, and the real
+ * orders confirm them. FP-001067 carries $160.00 of product, $25.00 shipping and
+ * an $18.50 discount — which is 10% of product PLUS shipping, not product alone
+ * — with tax on the product subtotal only. Both are reproduced below, and
+ * test-create-invoice-dashboard.mjs asserts the two paths agree on the total for
+ * the same basket. A checkout that charges a different number depending on an
+ * environment variable would be the worst possible outcome here.
+ *
+ * 🔑 THE ORDER NUMBER COMES BACK FROM THE DATABASE. create_manual_order mints
+ * its own FP-xxxxxx from a sequence, so using the locally generated one would
+ * put a number on the customer's email that matches nothing in the system.
+ *
+ * 🚨 STOCK MOVES INSIDE THE SAME TRANSACTION as the order — create_manual_order
+ * writes the ledger row itself. So unlike the Square path there is no separate
+ * "deduct stock" step that can fail on its own and leave a sale with no
+ * movement behind it.
+ */
+async function createOrderInDashboard({
+  items, shippingAmount, shippingLabel, promoValid, fulfillment,
+  customerName, customerEmail, customerPhone, street, city, state, zip, notes,
+}) {
+  const productCents = items.reduce((n, i) => n + Math.round(i.price * 100) * i.qty, 0);
+  const shipCents    = Math.round((shippingAmount || 0) * 100);
+
+  // Local pickup is always FL; shipping to FL is taxed, elsewhere is not.
+  // Shipping itself is not taxable in Florida.
+  const applyFlTax = fulfillment === 'Local Pickup' || String(state || '').toUpperCase() === 'FL';
+  const taxCents   = applyFlTax ? Math.round(productCents * (FL_TAX_RATE / 100)) : 0;
+  // ORDER scope in Square, so it covers shipping too — proven by FP-001067.
+  const discCents  = promoValid ? Math.round((productCents + shipCents) * 0.10) : 0;
+
+  // 🔑 create_manual_order takes a VARIANT id, so the site's catalogue id has to
+  // be resolved first. Migration 020 pinned every storefront variant to its site
+  // id precisely so this is a lookup and never a guess.
+  //
+  // 🚨 IT REFUSES RATHER THAN GUESSING. If a product on the site has no variant
+  // here, the sale cannot deduct stock and cannot reach revenue — recording it
+  // anyway would create exactly the silent hole this whole migration has been
+  // closing. It throws BEFORE anything is written, so the customer gets an error
+  // instead of a stranded order, and this file's hard rule is respected: nothing
+  // AFTER the order exists may fail. All 26 catalogue ids map today, so this is
+  // a guard against future drift, not a live risk.
+  const siteIds = [...new Set(items.map((i) => nameToId(i.name)).filter(Boolean))];
+  const variantRows = siteIds.length
+    ? await sbGet(`variants?select=id,site_catalog_id&site_catalog_id=in.(${siteIds.join(',')})`)
+    : [];
+  const bySiteId = new Map((variantRows || []).map((v) => [v.site_catalog_id, v.id]));
+
+  const lines = items.map((i) => {
+    const siteId = nameToId(i.name);
+    const variantId = siteId ? bySiteId.get(siteId) : null;
+    if (!variantId) {
+      throw new Error(`No product record for "${i.name}" — the order was not placed.`);
+    }
+    return {
+      kind: 'PRODUCT',
+      variant_id: variantId,
+      // The stored name stays exactly what the site sells it as: it is what
+      // resolve_variant matches on, and renaming silently stops stock deducting.
+      name: i.name,
+      quantity: i.qty,
+      unit_price_cents: Math.round(i.price * 100),
+    };
+  });
+
+  const isShip = fulfillment === 'Ship';
+  const payload = {
+    client_uid: `web-${idempotencyKey()}`,
+    purpose: 'SALE',
+    // Zelle is paid after the fact, so a web order starts unpaid — exactly as
+    // it did through Square. set-order-status is what marks it paid later.
+    payment_state: 'AWAITING_PAYMENT',
+    channel: 'WEBSITE',
+    tax_cents: taxCents,
+    discount_cents: discCents,
+    shipping_cents: shipCents,
+    note: notes || null,
+    customer: { name: customerName, email: customerEmail, phone: customerPhone || null },
+    lines,
+    fulfillment: {
+      type: isShip ? 'SHIPMENT' : 'PICKUP',
+      recipient_name: customerName,
+      recipient_email: customerEmail,
+      recipient_phone: customerPhone || null,
+      ...(isShip ? {
+        address_line1: street, city, state_region: state, postal_code: zip, country: 'US',
+      } : {}),
+    },
+  };
+
+  const result = await rpc('create_manual_order', { p: payload });
+  const row = Array.isArray(result) ? result[0] : result;
+  if (!row || !row.order_no) throw new Error('The order was not recorded: ' + JSON.stringify(result));
+
+  // 🔑 Returned in SQUARE'S SHAPE so the confirmation email and the invoice
+  // renderer stay untouched — one invoice design, not two. The totals are the
+  // database's, never re-derived here.
+  const lineItems = items.map((i) => ({
+    name: i.name, quantity: String(i.qty),
+    base_price_money: { amount: Math.round(i.price * 100), currency: 'USD' },
+    gross_sales_money: { amount: Math.round(i.price * 100) * i.qty, currency: 'USD' },
+  }));
+  if (shipCents > 0) {
+    lineItems.push({
+      name: shippingLabel ? `Shipping — ${shippingLabel}` : 'Shipping', quantity: '1',
+      base_price_money: { amount: shipCents, currency: 'USD' },
+      gross_sales_money: { amount: shipCents, currency: 'USD' },
+    });
+  }
+  return {
+    id: row.order_id,
+    reference_id: row.order_no,
+    created_at: new Date().toISOString(),
+    metadata: { forge_order_number: row.order_no, fulfillment_type: isShip ? 'SHIP' : 'LOCAL_PICKUP' },
+    line_items: lineItems,
+    total_discount_money: { amount: discCents, currency: 'USD' },
+    total_tax_money: { amount: taxCents, currency: 'USD' },
+    total_money: { amount: row.total_cents, currency: 'USD' },
+    _dashboard: true,
+    _orderNo: row.order_no,
+  };
+}
 
 async function createOrder(orderNum, customerId, items, shippingAmount, shippingLabel, promoValid, fulfillment, customerName, customerEmail, customerPhone, street, city, state, zip, notes) {
   // Local pickup is always FL; shipping applies tax only when destination is FL
@@ -461,14 +638,39 @@ exports.handler = async (event) => {
       throw new ValidationError(blockedMessage(shippable.blocked));
     }
 
-    const orderNum   = orderNumber();
-    const customerId = await findOrCreateCustomer(customerName, customerEmail, customerPhone);
-    const validPromo = await validatePromo(promoCode, customerId);
-    const order      = await createOrder(
-      orderNum, customerId, cleanItems, shipping, shipLabel, validPromo,
-      fulfillment, customerName, customerEmail, customerPhone,
-      street, city, state, zip, notes
-    );
+    // ── Where this order gets written (step 5) ───────────────────────────────
+    // 🚨 ORDER_SOURCE=dashboard is a ONE-WAY DOOR for every order placed while
+    // it is on: they exist here and nowhere else, and cannot be rolled back into
+    // Square. It defaults to 'square' so nothing changes until it is set
+    // deliberately.
+    const writeTo = orderSource();
+    let orderNum = orderNumber();
+    let customerId = null;
+    let validPromo = false;
+    let order;
+
+    if (writeTo === 'dashboard') {
+      // 🔑 The promo still has to be checked, and it is checked against the
+      // DASHBOARD's own history rather than Square's customer record — see
+      // validatePromo. Passing null asks it to look the customer up by email.
+      validPromo = await validatePromo(promoCode, null, customerEmail);
+      order = await createOrderInDashboard({
+        items: cleanItems, shippingAmount: shipping, shippingLabel: shipLabel,
+        promoValid: validPromo, fulfillment,
+        customerName, customerEmail, customerPhone, street, city, state, zip, notes,
+      });
+      // 🔑 The database mints the order number, so the one on the customer's
+      // email matches the one in the system.
+      orderNum = order._orderNo;
+    } else {
+      customerId = await findOrCreateCustomer(customerName, customerEmail, customerPhone);
+      validPromo = await validatePromo(promoCode, customerId);
+      order = await createOrder(
+        orderNum, customerId, cleanItems, shipping, shipLabel, validPromo,
+        fulfillment, customerName, customerEmail, customerPhone,
+        street, city, state, zip, notes
+      );
+    }
 
     // ── Past this point the order EXISTS and the sale is real. Nothing below is
     // allowed to turn a placed order into an error screen for the customer.
@@ -477,10 +679,17 @@ exports.handler = async (event) => {
     // Deduct stock. Verified working on the deactivated Square account
     // (2026-08-13), but wrapped regardless — a stock-sync problem is a
     // bookkeeping issue, not a reason to reject a paying customer.
-    try {
-      await adjustInventory(cleanItems);
-    } catch (invErr) {
-      console.error(`INVENTORY NOT DEDUCTED for ${orderNum}:`, invErr.message);
+    // 🔑 Skipped entirely on the dashboard path: create_manual_order writes the
+    // stock ledger row inside the same transaction as the order, so there is no
+    // separate deduction that can fail on its own and leave a sale with no
+    // movement behind it. That is strictly better than this Square step, which
+    // could and did fail independently.
+    if (writeTo !== 'dashboard') {
+      try {
+        await adjustInventory(cleanItems);
+      } catch (invErr) {
+        console.error(`INVENTORY NOT DEDUCTED for ${orderNum}:`, invErr.message);
+      }
     }
 
     // Mirror the sale into the dashboard database. Added 2026-08-17: until now
@@ -492,13 +701,18 @@ exports.handler = async (event) => {
     // /admin.html; a customer seeing an error on a placed order is not.
     // Double-posting is impossible by construction — sync_square_order() keys
     // on the Square order id and moves stock only on first sight.
-    try {
-      await syncOrder(order, {
-        square_id: customerId, name: customerName,
-        email: customerEmail, phone: customerPhone,
-      });
-    } catch (syncErr) {
-      console.error(`DASHBOARD SYNC FAILED for ${orderNum} (re-run Sync in /admin.html):`, syncErr.message);
+    // 🔑 Nothing to mirror on the dashboard path — the order was written here in
+    // the first place. Syncing it would try to key on a Square id it does not
+    // have.
+    if (writeTo !== 'dashboard') {
+      try {
+        await syncOrder(order, {
+          square_id: customerId, name: customerName,
+          email: customerEmail, phone: customerPhone,
+        });
+      } catch (syncErr) {
+        console.error(`DASHBOARD SYNC FAILED for ${orderNum} (re-run Sync in /admin.html):`, syncErr.message);
+      }
     }
 
     // SMS consent. Recorded SEPARATELY from the order sync and in its own try,
