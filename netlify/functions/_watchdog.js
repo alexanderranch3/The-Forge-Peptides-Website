@@ -440,7 +440,21 @@ function probeQuietOrderFeed(s) {
 function probePaidNoTender(s) {
   if (!s.orders.ok) return blind('paid_no_tender', 'books', s.orders.error);
   const findings = s.orders.rows
-    .filter((o) => o.payment_state === 'PAID' && (o.tenders || []).length === 0)
+    // 🚨 ONLY WHERE A TENDER WAS ACTUALLY EXPECTED. create_manual_order writes
+    // one when payment_state is PAID **and purpose is SALE and the total is
+    // above zero** — so those are exactly the orders whose missing tender is a
+    // fault. Without the last two conditions this fired on the first owner
+    // order ever placed (FP-001176, INTERNAL, $0.00) and announced that its
+    // money was missing from revenue, when there was no money and an INTERNAL
+    // order is never revenue by design.
+    //
+    // 🔑 A monitor that cries wolf is a monitor that gets ignored, which is the
+    // exact failure this whole file exists to prevent. probeStockMovedNoMoney
+    // below already drew this distinction; this probe had not.
+    .filter((o) => o.payment_state === 'PAID'
+      && o.purpose === 'SALE'
+      && Number(o.total_cents) > 0
+      && (o.tenders || []).length === 0)
     .map((o) => ({
       order_no: o.order_no,
       placed_at: o.placed_at,

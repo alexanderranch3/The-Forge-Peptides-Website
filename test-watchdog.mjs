@@ -403,5 +403,42 @@ console.log('\n18. end to end, with the network stubbed');
   okTrue('and the infra probe names it', down.probes.find((p) => p.probe === 'reachable').findings.length > 0);
 }
 
+
+// ── paid_no_tender ───────────────────────────────────────────────────────────
+// 🚨 This probe caught a real bug (migration 018) and then invented one. The
+// first owner order ever placed — FP-001176, INTERNAL, $0.00, no tender because
+// none was owed — was reported as "its money is missing from revenue". A monitor
+// that cries wolf is a monitor that gets ignored, which is the exact failure
+// this file exists to prevent.
+console.log('\n— paid_no_tender only fires where a tender was expected —');
+{
+  // 🔑 The probe is called DIRECTLY, as every other test here does. runWatchdog()
+  // takes no arguments and fetches its own sources, so passing a bundle to it
+  // would have been silently ignored — and the assertions would have passed on
+  // an empty store while proving nothing.
+  const run = (over) => {
+    const s = CLEAN();
+    s.orders.rows = [{ ...s.orders.rows[0], ...over }];
+    return W.probePaidNoTender(s);
+  };
+
+  // The real bug it exists for: a PAID SALE with money and no tender.
+  let p = run({ purpose: 'SALE', total_cents: 16000, tenders: [] });
+  ok('a paid SALE with no tender is still caught', p.findings.length, 1);
+
+  // 🔑 create_manual_order writes a tender only when PAID **and** SALE **and**
+  // the total is above zero. Those three are exactly what this now checks.
+  p = run({ purpose: 'INTERNAL', total_cents: 0, tenders: [] });
+  ok('🚨 an INTERNAL $0 owner order is not a finding', p.findings.length, 0);
+  p = run({ purpose: 'COMP', total_cents: 0, tenders: [] });
+  ok('nor is a comped give-away', p.findings.length, 0);
+  p = run({ purpose: 'INTERNAL', total_cents: 5000, tenders: [] });
+  ok('nor own use that was never money', p.findings.length, 0);
+  p = run({ purpose: 'SALE', total_cents: 0, tenders: [] });
+  ok('nor a $0 sale, which has nothing to tender', p.findings.length, 0);
+  p = run({ purpose: 'SALE', total_cents: 16000, tenders: [{ id: 't1' }] });
+  ok('and a properly tendered sale is clean', p.findings.length, 0);
+}
+
 console.log(`\n${fail ? `${fail} FAILED, ` : ''}${pass} passed.`);
 process.exit(fail ? 1 : 0);
