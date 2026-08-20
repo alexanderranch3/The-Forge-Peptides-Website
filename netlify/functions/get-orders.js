@@ -31,7 +31,22 @@ function squareHeaders() {
 }
 
 // Fetch orders for the location within the window, paginating until done.
+// ⚠️ FAILS SOFT SINCE STEP 2 (2026-08-20): returns null when Square cannot be
+// reached at all, rather than throwing. The dashboard is the primary list now,
+// so a Square outage must not empty the screen Frank ships from — it used to
+// take the whole request down with it. null and [] are kept distinct: "could not
+// ask Square" is not "Square has no orders", and only the first is a reason to
+// stop trusting the stray check below.
 async function fetchOrders(since) {
+  try {
+    return await fetchOrdersFromSquare(since);
+  } catch (err) {
+    console.error('get-orders: Square unreachable, serving the dashboard alone:', err.message);
+    return null;
+  }
+}
+
+async function fetchOrdersFromSquare(since) {
   const orders = [];
   let cursor = null;
 
@@ -172,8 +187,95 @@ async function fetchCancelledSquareIds() {
   return new Set(rows.map((r) => r.square_id));
 }
 
+// ── The dashboard's own order feed (step 2, 2026-08-20) ──────────────────────
+//
+// 🔑 THIS IS NOW THE PRIMARY LIST. It used to be Square's, with the dashboard
+// merged in for counter sales only — which made Square the record and this
+// database the copy. Everything the tab draws is in v_admin_orders (migration
+// 034): customer, address, carrier, tracking, the money breakdown, and every
+// line except shipping.
+//
+// ⚠️ SQUARE IS STILL FETCHED, and still merged in for any order this feed does
+// not have. It should never find one — every Square order syncs here — but "it
+// should never happen" is not a reason to drop an order off the screen Frank
+// ships from. That fallback is what makes this switch safe to make before
+// checkout stops writing to Square, and it is the last thing to remove.
+//
+// 🚨 It reads by PLACED_AT, not created_at. A Square-era order was imported long
+// after it was placed, and filtering on the import date would have hidden every
+// backdated order — the same shape of bug as the 90-day window that hid
+// FP-001004.
+async function fetchAdminOrders(since, aliasLinesPromise) {
+  const [rows, aliasLines] = await Promise.all([
+    sb(`v_admin_orders?select=*&placed_at=gte.${since.toISOString()}&order=placed_at.desc`),
+    aliasLinesPromise,
+  ]);
+  if (!rows) return null;   // null, not [] — "could not ask" is not "no orders"
+
+  return rows.map((r) => {
+    const cents = (v) => Math.round(Number(v || 0)) / 100;
+    const ship = r.address_line1 ? {
+      street:  r.address_line1 + (r.address_line2 ? `, ${r.address_line2}` : ''),
+      city:    r.city || '',
+      state:   r.state_region || '',
+      zip:     r.postal_code || '',
+      country: r.country || 'US',
+    } : null;
+
+    // "Shipping — UPS 2nd Day Air" → "UPS 2nd Day Air". The carrier was only
+    // ever written into the line's name on Square-era orders, and
+    // fulfillments.service is populated on 0 of 93 rows.
+    const label = r.service
+      || (r.shipping_line_name && r.shipping_line_name.includes('—')
+            ? r.shipping_line_name.split('—').slice(1).join('—').trim()
+            : null)
+      || r.carrier
+      || null;
+
+    return {
+      orderId:     r.order_id,
+      // Carried so a Square order already represented here can be recognised
+      // and not shown twice — the two systems key orders differently.
+      squareId:    r.square_id || null,
+      orderNumber: r.order_no || '',
+      // 🔑 The order's own state is read FIRST, so a voided sale reads as
+      // voided rather than as whatever it was paid.
+      status: r.order_state === 'CANCELED'
+        ? 'CANCELED'
+        : (r.payment_state === 'PAID' ? 'PAID' : 'AWAITING_ZELLE'),
+      createdAt:     r.placed_at,
+      customerName:  r.customer_name || 'Unknown',
+      customerEmail: r.customer_email || '',
+      customerPhone: r.customer_phone || '',
+      customerNote:  r.customer_note || '',
+      promoCode:     null,
+      fulfillmentType: r.fulfillment_type === 'SHIPMENT' ? 'SHIP' : 'LOCAL_PICKUP',
+      channel:       r.channel === 'WEBSITE' ? 'WEB' : r.channel,
+      fulfillmentState: r.fulfillment_state || 'PROPOSED',
+      trackingNumber:   r.tracking_number || null,
+      // Kept so the page can still tell them apart, but it no longer decides
+      // where the row came from — everything comes from here now.
+      dashboardOnly: !r.square_id,
+      shipTo: ship,
+      items: (Array.isArray(r.items) ? r.items : []).map((i) => {
+        const { sku, label: name } = packingLineFor(aliasLines, i.name);
+        return { name, sku, qty: Number(i.qty) || 0, price: Number(i.price) || 0 };
+      }),
+      subtotal:       cents(r.subtotal_cents),
+      shippingAmount: cents(r.shipping_cents),
+      shippingLabel:  label,
+      discount:       cents(r.discount_cents),
+      taxAmount:      cents(r.tax_cents),
+      total:          cents(r.total_cents),
+    };
+  });
+}
+
 // Orders that exist only here. Shaped to match a Square order exactly so the UI
 // never has to care which system a sale came from.
+// ⚠️ KEPT ONLY AS A FALLBACK for the case where v_admin_orders cannot be read —
+// it is no longer the counter-sale path, because the feed above carries those
+// too. Remove it when Square goes.
 async function fetchDashboardOnlyOrders(since, aliasLinesPromise) {
   // Both are started by the caller and awaited here, so the alias lookup costs
   // no extra round trip — it runs alongside the order fetch, not after it.
@@ -276,19 +378,46 @@ exports.handler = async (event) => {
     // lookup, and it overlaps every other request rather than following them.
     const aliasLinesPromise = fetchAliasLines();
 
-    const [orders, dashboardOnly, fulfillmentMap, cancelledIds, aliasLines] = await Promise.all([
+    const [orders, adminOrders, dashboardOnly, fulfillmentMap, cancelledIds, aliasLines] = await Promise.all([
       fetchOrders(since),
+      fetchAdminOrders(since, aliasLinesPromise),
       fetchDashboardOnlyOrders(since, aliasLinesPromise),
       fetchFulfillmentBySquareId(),
       fetchCancelledSquareIds(),
       aliasLinesPromise,
     ]);
 
+
     // 🚨 NOT an early return on an empty Square list any more. Counter sales
     // live only in the dashboard, so "Square returned nothing" does not mean
     // "there are no orders" — that assumption is what hid FP-001158.
-    if (!orders.length) {
-      return { statusCode: 200, headers, body: JSON.stringify({ orders: dashboardOnly }) };
+    // 🚨 NOT an early return on an empty Square list. Counter sales live only in
+    // the dashboard, so "Square returned nothing" never meant "there are no
+    // orders" — that assumption is what hid FP-001158. Now the dashboard feed
+    // answers it outright.
+    if (!orders || !orders.length) {
+      // 🚨 Both sources silent is an OUTAGE, not an empty day. Serving [] would
+      // read as "no orders" on the screen used to decide what to pack.
+      if (!adminOrders && orders === null) {
+        return {
+          statusCode: 502, headers,
+          body: JSON.stringify({
+            error: 'Could not reach the dashboard or Square — this is not an empty order list.',
+          }),
+        };
+      }
+      // ⚠️ Sorted here too. This early exit used to return the list untouched,
+      // which put orders in whatever order the source happened to yield — and
+      // with the dashboard primary this is now a COMMON path, not a rare one.
+      const only = [...(adminOrders || dashboardOnly)]
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          orders: only,
+          source: adminOrders ? 'dashboard' : 'square',
+        }),
+      };
     }
 
     const customersMap = await fetchCustomers(orders.map(o => o.customer_id));
@@ -384,15 +513,45 @@ exports.handler = async (event) => {
       };
     });
 
+    // ── Dashboard first (step 2, 2026-08-20) ─────────────────────────────────
+    // 🔑 THE INVERSION. The dashboard's own feed is the list; Square is consulted
+    // only for orders that feed does not already have. Every Square order syncs
+    // here, so `strays` should always be empty — but an order silently missing
+    // from the screen Frank ships from is the one outcome worth carrying a
+    // redundant path to avoid. It goes when checkout stops writing to Square.
+    //
+    // ⚠️ Falls back to EXACTLY the previous behaviour when the feed cannot be
+    // read (fetchAdminOrders returns null, never []). A reporting view being
+    // down must never empty the Orders tab.
+    let merged;
+    let source;
+    if (adminOrders) {
+      const known       = new Set(adminOrders.map((o) => o.orderId));
+      const knownSquare = new Set(adminOrders.map((o) => o.squareId).filter(Boolean));
+      // `result` is empty when Square could not be reached; the dashboard feed
+      // stands alone, which is the whole point of the inversion.
+      const strays = (result || []).filter((o) => !known.has(o.orderId) && !knownSquare.has(o.orderId));
+      if (strays.length) {
+        // Loud, because it means an order reached Square and never reached here
+        // — a sync gap, not a display quirk.
+        console.warn(`get-orders: ${strays.length} Square order(s) missing from the dashboard feed: `
+          + strays.map((o) => o.orderNumber || o.orderId).join(', '));
+      }
+      merged = [...adminOrders, ...strays];
+      source = strays.length ? 'dashboard+square' : 'dashboard';
+    } else {
+      merged = [...result, ...dashboardOnly];
+      source = 'square';
+    }
+
     // Newest first, across both sources, so a counter sale and a web order sit
     // in one chronological list rather than two.
-    const merged = [...result, ...dashboardOnly]
-      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    merged.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ orders: merged }),
+      body: JSON.stringify({ orders: merged, source }),
     };
 
   } catch (err) {
