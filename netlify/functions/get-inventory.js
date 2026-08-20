@@ -15,6 +15,10 @@
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const { nameToId } = require('./_catalog-map');
+// 🔑 What the storefront actually sells. Safe to require: _catalog.js imports
+// nothing, which is exactly why it was extracted — requiring it back from a
+// module _invoice.js depends on would otherwise be a cycle.
+const { CATALOG } = require('./_catalog');
 const { stockSource, fetchStock, fetchBlocked } = require('./_stock');
 
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
@@ -106,7 +110,22 @@ exports.handler = async () => {
       if (stock) {
         source = 'dashboard';
         for (const [id, entry] of Object.entries(stock)) {
-          if (!result[id]) continue;              // not sold on the site
+          // 🚨 CREATE THE ENTRY WHEN IT IS MISSING, don't skip it. `result` is
+          // built from SQUARE's catalog above, so a product that lives in the
+          // dashboard and the storefront CATALOG but that Square never had —
+          // retatrutide-30mg, bpc-157-10mg, both created 2026-08-17 — was
+          // silently dropped here. The effect was invisible and one-directional:
+          // it sells fine, but its card COULD NEVER GO SOLD OUT however far the
+          // real count fell, because nothing downstream had a key to set.
+          //
+          // 🔑 CATALOG is the test for "sold on the site", not Square. A product
+          // missing from CATALOG cannot be bought at any price, so it is the
+          // thing that actually decides. An id in neither is genuinely not ours
+          // and is still skipped.
+          if (!result[id]) {
+            if (!CATALOG[id]) continue;           // genuinely not sold on the site
+            result[id] = { soldOut: false, price: null };   // price stays null: the card keeps its static one
+          }
           result[id].onHand  = entry.on_hand;
           result[id].soldOut = entry.on_hand <= 0;
         }
