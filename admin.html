@@ -30,7 +30,19 @@
     #login-error { color: #dc3545; font-size: 0.82rem; margin-top: 10px; display: none; }
 
     /* ── Dashboard ── */
-    #dashboard { display: none; padding: 28px; max-width: 1400px; margin: 0 auto; }
+    /* 🔑 NARROWED 1400 → 1120 (2026-08-20). Frank: "they stretch all the way to
+       the end of the window, so it's kind of hard to see and navigate."
+       A wide monitor stretched every table edge to edge, which puts a number and
+       its own row label a foot apart — the eye loses the line between them.
+       ~1120px keeps a dense table readable without wasting the screen; the wide
+       tables scroll inside their own .table-wrap rather than dragging the page
+       out with them, which they already did and now actually needs to. */
+    #dashboard { display: none; padding: 28px 24px 48px; max-width: 1120px; margin: 0 auto; }
+
+    /* Prose is worse than tables when it is stretched — a full-width paragraph
+       is genuinely hard to track back to the start of the next line. These are
+       explanations, so they get a reading measure of their own. */
+    .sub-note, .fin-note, .alert-band p, .house-head p { max-width: 78ch; }
 
     .dash-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -380,7 +392,10 @@
        green part of it is profit and the dark part is what the vials cost. One
        bar therefore answers both "how much did we sell" and "how much of it did
        we keep", which are the two questions and were never separable anyway. */
-    .fin-month { margin-bottom: 15px; }
+    /* The bars themselves want the full width — that is what makes months
+       comparable — but their head line is a label on the left and figures on
+       the right, so it gets the same treatment as the bridge. */
+    .fin-month { margin-bottom: 15px; max-width: 900px; }
     .fin-month-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
       font-size: .85rem; color: #bbb; margin-bottom: 5px; flex-wrap: wrap; }
     .fin-month-head b { color: #fff; }
@@ -398,7 +413,10 @@
 
     /* The bridge from "revenue" to "money". They are different numbers and the
        page shows the whole walk between them rather than picking one. */
-    .fin-bridge { width: 100%; font-size: .86rem; }
+    /* 🔑 A two-column label/amount table reads badly stretched: the eye has to
+       travel the whole width to connect "Product revenue" to its figure. Capped
+       so the pair stays together, which is the entire job of this panel. */
+    .fin-bridge { width: 100%; max-width: 680px; font-size: .86rem; }
     .fin-bridge td { padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
     .fin-bridge td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: #ddd; }
     .fin-bridge tr:hover td { background: none; }
@@ -409,6 +427,9 @@
     .fin-bridge .why { color: #666; font-size: .74rem; display: block; margin-top: 3px; line-height: 1.5; }
     .fin-bridge .why b { color: #999; }
 
+    /* The card holds one narrow table, so it should not be a wide box with dead
+       space beside it. */
+    .panel-card.fin-money-card { max-width: 740px; }
     .fin-note { color: #777; font-size: .8rem; line-height: 1.65; margin-top: 14px; }
     .fin-note b { color: #ccc; }
     .fin-note .flag { color: #ffc107; }
@@ -1098,7 +1119,7 @@
     <h2 style="color:#FF6A00;font-size:1.05rem;margin:28px 0 6px;">Where the money actually is</h2>
     <p class="sub-note">Revenue is <b>product lines before sales tax</b>. What people handed over is a
       different figure — this is the whole walk between them.</p>
-    <div class="panel-card">
+    <div class="panel-card fin-money-card">
       <table class="fin-bridge"><tbody id="fin-bridge-body"></tbody></table>
       <div class="fin-note" id="fin-money-note"></div>
     </div>

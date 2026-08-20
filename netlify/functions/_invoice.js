@@ -98,6 +98,75 @@ function invoiceModel({ order, customer, address }) {
   };
 }
 
+/**
+ * The same invoice model, built from the DASHBOARD instead of a Square order.
+ * Step 3 of moving off Square (2026-08-20).
+ *
+ * 🔑 IT RETURNS THE IDENTICAL SHAPE, so invoiceHtml() is untouched and there is
+ * exactly one invoice design rather than two that drift. test-send-invoice.mjs
+ * asserts both paths produce the same model for the same order.
+ *
+ * 🚨 IT FIXES A REAL GAP, not just a dependency. send-invoice took a SQUARE
+ * order id, and a counter sale has no Square order — so a walk-in customer could
+ * not be sent an invoice at all. Every order can be now.
+ *
+ * 🚨 SHIPPING IS RE-ADDED AS A LINE. On the Square path shipping arrives as a
+ * line item and is therefore inside the subtotal; the invoice has no shipping
+ * row of its own. v_admin_orders deliberately excludes shipping from `items`
+ * (it is not a thing to pick), so without this the invoice would show a subtotal
+ * that did not reach its own total. The arithmetic the invoice prints is
+ * subtotal − discount + tax = total, and it has to hold.
+ *
+ * ⚠️ Amounts are GROSS (unit price × quantity), matching the Square path, with
+ * the discount shown once on its own row. Netting it into the lines as well
+ * would take it off twice.
+ */
+function invoiceModelFromDashboard(row, packLine) {
+  const int = (v) => Math.round(Number(v || 0));
+  const items = (Array.isArray(row.items) ? row.items : []).map((li) => {
+    const qty = Number(li.qty) || 0;
+    const unit = int(Number(li.price) * 100);
+    const { sku, label } = packLine(li.name);
+    return { name: label, sku, qty, unit_cents: unit, amount_cents: unit * qty };
+  });
+
+  const shipping = int(row.shipping_cents);
+  if (shipping > 0) {
+    items.push({
+      // The carrier when we know it, so the customer can see what they paid for.
+      name: row.shipping_line_name || (row.carrier ? `Shipping — ${row.carrier}` : 'Shipping'),
+      sku: null, qty: 1, unit_cents: shipping, amount_cents: shipping,
+    });
+  }
+
+  const address = row.address_line1 ? {
+    street: row.address_line1 + (row.address_line2 ? `, ${row.address_line2}` : ''),
+    city: row.city || '',
+    state: row.state_region || '',
+    zip: row.postal_code || '',
+  } : null;
+
+  return {
+    number: row.order_no || '',
+    issued: row.placed_at,
+    // A tender is the honest test — the same one v_product_sales applies.
+    paid: row.payment_state === 'PAID' || !!row.tender_types,
+    customerName: row.customer_name === 'Unknown' ? '' : (row.customer_name || ''),
+    customerEmail: row.customer_email || '',
+    customerPhone: row.customer_phone || '',
+    address,
+    isPickup: row.fulfillment_type !== 'SHIPMENT',
+    items,
+    subtotal_cents: items.reduce((n, i) => n + i.amount_cents, 0),
+    discount_cents: int(row.discount_cents),
+    discount_label: 'Discount',
+    tax_cents: int(row.tax_cents),
+    // 🔑 The stored total, never a re-derived one. A second opinion about what a
+    // customer owes is how two systems end up disagreeing about it.
+    total_cents: int(row.total_cents),
+  };
+}
+
 function invoiceHtml(m) {
   const rows = m.items.map((i, idx) => `
     <tr>
@@ -253,7 +322,8 @@ function ownerNotificationHtml(m) {
 // They were briefly duplicated there — the same mistake that let two copies of
 // nameToId drift apart. One definition, imported.
 module.exports = {
-  invoiceModel, invoiceHtml, ownerNotificationHtml,
+  invoiceModel,
+  invoiceModelFromDashboard, invoiceHtml, ownerNotificationHtml,
   money, esc, formatDate,
   ZELLE_TAG, SITE_URL,
 };

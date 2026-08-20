@@ -19,10 +19,43 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { verifyToken } = require('./_auth-token');
-const { invoiceModel, invoiceHtml, ownerNotificationHtml, money } = require('./_invoice');
+const { invoiceModel, invoiceModelFromDashboard, invoiceHtml, ownerNotificationHtml, money } = require('./_invoice');
+const { fetchAliasLines, packingLineFor } = require('./_alias-skus');
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ── The dashboard is asked first (step 3, 2026-08-20) ────────────────────────
+//
+// 🚨 THIS FIXES A GAP, not just a Square dependency. The invoice was built from
+// a SQUARE order id, and a counter sale has no Square order — so a walk-in
+// customer could not be sent an invoice at all. The Orders tab passes the Square
+// id when there is one and the dashboard uuid otherwise, so both shapes arrive
+// here and both are handled.
+//
+// ⚠️ Falls back to Square when the dashboard cannot answer, so nothing that
+// worked before stops working. That fallback goes when checkout does.
+async function loadFromDashboard(id) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  const column = UUID_RE.test(id) ? 'order_id' : 'square_id';
+  try {
+    const [rows, aliasLines] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/v_admin_orders?select=*&${column}=eq.${encodeURIComponent(id)}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Accept: 'application/json' },
+      }).then((r) => (r.ok ? r.json() : null)),
+      fetchAliasLines(),
+    ]);
+    if (!Array.isArray(rows) || !rows.length) return null;
+    // 🔑 The SKU comes from what the stock actually did, same as the picking
+    // view — so the invoice and the packing list name the same vial.
+    return invoiceModelFromDashboard(rows[0], (name) => packingLineFor(aliasLines, name));
+  } catch {
+    return null;
+  }
+}
 
 const RESEND_KEY   = process.env.RESEND_API_KEY;
 const FROM_EMAIL   = process.env.ORDER_FROM_EMAIL   || 'The Forge Peptides <orders@theforgepeptides.com>';
@@ -120,8 +153,11 @@ exports.handler = async (event) => {
       if (!orderId) {
         return { statusCode: 400, headers: jsonHeaders, body: JSON.stringify({ error: 'order_id is required' }) };
       }
-      const { order, customer, address } = await loadOrder(orderId);
-      const model = invoiceModel({ order, customer, address });
+      let model = await loadFromDashboard(orderId);
+      if (!model) {
+        const { order, customer, address } = await loadOrder(orderId);
+        model = invoiceModel({ order, customer, address });
+      }
       return {
         statusCode: 200,
         headers: jsonHeaders,
@@ -158,8 +194,14 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers: jsonHeaders, body: JSON.stringify({ error: 'order_id is required' }) };
     }
 
-    const { order, customer, address } = await loadOrder(input.order_id);
-    const model = invoiceModel({ order, customer, address });
+    // 🔑 Same order of preference as the preview, so what gets SENT is exactly
+    // what was reviewed. Two different sources between preview and send is how a
+    // customer receives an invoice nobody looked at.
+    let model = await loadFromDashboard(input.order_id);
+    if (!model) {
+      const { order, customer, address } = await loadOrder(input.order_id);
+      model = invoiceModel({ order, customer, address });
+    }
 
     const to = String(input.to || model.customerEmail || '').trim();
     if (!EMAIL_RE.test(to)) {
