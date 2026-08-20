@@ -168,6 +168,14 @@ exports.handler = async (event) => {
             list_cents: entry ? Math.round(entry.price * 100) : null,
             note: r.note,
             updated_at: r.updated_at,
+            // 🚨 The agreed price CANNOT APPLY any more: the product has left the
+            // site catalogue, and customer_prices() only returns rows that still
+            // carry a site id. Without saying so, the profile would go on listing
+            // an agreed price that quietly does nothing — which is the exact
+            // shape of the two inert-flag bugs found on 2026-08-20 (is_hidden,
+            // then is_archived): a screen claiming one thing while the system
+            // does another. Retiring a product is the only way to reach this.
+            unsellable: !entry,
           };
         }).sort((a, b) => String(a.name).localeCompare(String(b.name))),
 

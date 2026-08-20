@@ -15,6 +15,7 @@
 //      discount and tax expressions were rearranged to support the exclusion;
 //      real orders are re-derived here to prove nothing moved by a cent.
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
 const require = createRequire(import.meta.url);
 
 let pass = 0, fail = 0;
@@ -309,6 +310,55 @@ okTrue('   and the rest of the panel intact', accBody.signedIn === true);
 // A signed-out request never reaches any of it.
 accRes = await require('./netlify/functions/account.js').handler({ httpMethod: 'GET', headers: {} });
 ok('🚨 signed out gets 401, not a price list', accRes.statusCode, 401);
+
+
+// ── 13. An agreed price on a product that was later RETIRED ─────────────────
+// 🚨 customer_prices() only returns rows that still carry a site catalogue id,
+// so retiring a product silently stops its agreed price applying. The profile
+// must SAY that rather than go on listing a price that does nothing — the same
+// shape as the two inert-flag bugs found the same day.
+console.log('\n13. a price on a product that has since been retired');
+process.env.ADMIN_TOKEN_SECRET = 'admin-secret';
+const { signToken } = require('./netlify/functions/_auth-token.js');
+const adminToken = signToken('admin-secret', 60);
+const PARTY = '22222222-2222-2222-2222-222222222222';
+global.fetch = async (url) => {
+  const u = String(url);
+  const body = (rows) => ({ ok: true, status: 200, text: async () => JSON.stringify(rows) });
+  if (u.includes('v_customer_profile')) return body([{ party_id: PARTY, display_name: 'Antonio Torres', email: 'a@b.com' }]);
+  if (u.includes('v_party_prices')) return body([
+    { variant_id: 'v1', product_name: 'Retatrutide 15mg', variant_name: '15mg',
+      site_catalog_id: 'retatrutide-15mg', price_cents: 7500, note: 'Brother Rate' },
+    // Retired: no longer in CATALOG, so this price can never apply.
+    { variant_id: 'v2', product_name: 'TESAMORELIN / IPAMORELIN "PHOENIX BLEND"', variant_name: null,
+      site_catalog_id: 'phoenix-blend', price_cents: 12000, note: null },
+  ]);
+  if (u.includes('variants?select=id,name,site_catalog_id')) return body([
+    { id: 'v1', name: '15mg', site_catalog_id: 'retatrutide-15mg', is_archived: false, products: { name: 'Retatrutide 15mg' } },
+    { id: 'v2', name: null,   site_catalog_id: 'phoenix-blend',    is_archived: true,  products: { name: 'Phoenix' } },
+  ]);
+  return body([]);
+};
+delete require.cache[require.resolve('./netlify/functions/get-customer.js')];
+const cust = require('./netlify/functions/get-customer.js');
+const cres = await cust.handler({
+  httpMethod: 'GET', headers: { authorization: `Bearer ${adminToken}` },
+  queryStringParameters: { party_id: PARTY },
+});
+ok('the profile loads', cres.statusCode, 200);
+const cbody = JSON.parse(cres.body);
+const livePrice = cbody.prices.find((r) => r.site_catalog_id === 'retatrutide-15mg');
+const deadPrice = cbody.prices.find((r) => r.site_catalog_id === 'phoenix-blend');
+ok('a live agreed price shows its retail for comparison', [livePrice.price_cents, livePrice.list_cents], [7500, 19500]);
+okTrue('   and is not flagged', !livePrice.unsellable);
+ok('🚨 a price on a RETIRED product is flagged as unable to apply', deadPrice.unsellable, true);
+ok('   with no retail to compare against, because it is not sold',  deadPrice.list_cents, null);
+okTrue('🚨 the retired product is NOT offered for new pricing',
+  !cbody.sellable.some((v) => v.site_catalog_id === 'phoenix-blend'));
+okTrue('   while the live one still is',
+  cbody.sellable.some((v) => v.site_catalog_id === 'retatrutide-15mg'));
+okTrue('the admin page renders the warning',
+  readFileSync('./admin.html', 'utf8').includes('the shop no longer sells this'));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

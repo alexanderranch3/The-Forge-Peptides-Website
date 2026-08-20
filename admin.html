@@ -3297,8 +3297,10 @@ function renderCustomerProfile(d) {
   const priceRows = prices.length ? prices.map(x => {
     const list = x.list_cents;
     const off  = list != null ? list - x.price_cents : null;
-    return `<tr>
-      <td><strong>${esc(x.name)}</strong>${x.note ? `<br><span class="dim">${esc(x.note)}</span>` : ''}</td>
+    return `<tr${x.unsellable ? ' style="opacity:.7;"' : ''}>
+      <td><strong>${esc(x.name)}</strong>${x.note ? `<br><span class="dim">${esc(x.note)}</span>` : ''}
+        ${x.unsellable ? '<br><span class="warn-cell">⚠️ Retired — the shop no longer sells this, '
+          + 'so this price cannot apply. Remove it, or put the product back on sale.</span>' : ''}</td>
       <td class="num dim" style="text-decoration:line-through;">${list != null ? centsToUsd(list) : '—'}</td>
       <td class="num" style="color:#FF6A00;font-weight:700;">${centsToUsd(x.price_cents)}</td>
       <td class="num">${off == null ? '<span class="dim">—</span>'
