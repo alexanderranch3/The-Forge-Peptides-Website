@@ -448,6 +448,11 @@
         <option value="30" selected>Last 30 days</option>
         <option value="60">Last 60 days</option>
         <option value="90">Last 90 days</option>
+        <!-- 🔑 Beyond 90 days, because an old order can still need something
+             doing to it. FP-001004 was 91 days old and owed $259 — one day past
+             the furthest this list could see. -->
+        <option value="180">Last 6 months</option>
+        <option value="365">Last 12 months</option>
       </select>
       <button class="btn btn-primary" onclick="openSale()" title="Ring up an in-person sale">+ New sale</button>
       <button class="btn btn-outline" onclick="loadOrders()">↺ Refresh</button>

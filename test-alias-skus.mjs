@@ -14,6 +14,7 @@
 //  • ⚠️ Everything fails soft. A picking list that will not draw because a
 //    lookup table was unreachable is a worse outcome than a missing SKU.
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
 const require = createRequire(import.meta.url);
 
 let pass = 0, fail = 0;
@@ -175,6 +176,21 @@ const conflicts = AUDIT.filter(([alias, dbId]) => {
   return parsed !== null && parsed !== dbId;
 });
 ok('no alias contradicts the name parser', conflicts, []);
+
+console.log('\n— 🚨 a DRAFT order must be reachable —');
+// FP-001004 (Leo the Den, $259, 21 May) was the only DRAFT in the system and was
+// invisible for three months: v_dashboard_only_orders skips anything with a
+// square_id, so Square was the only route in, and get-orders asked Square for
+// OPEN and COMPLETED only. The Finance tab flagged it as owing money while the
+// Orders tab could not show it, so it could never be marked paid.
+const src = readFileSync('./netlify/functions/get-orders.js', 'utf8');
+const states = src.match(/state_filter:\s*\{\s*states:\s*\[([^\]]+)\]/);
+okTrue('get-orders asks Square for DRAFT too', states && /DRAFT/.test(states[1]));
+okTrue('and still for OPEN and COMPLETED',
+  states && /OPEN/.test(states[1]) && /COMPLETED/.test(states[1]));
+// The window has to reach it as well — 91 days old is past the old 90-day cap.
+const page = readFileSync('./admin.html', 'utf8');
+okTrue('the orders window reaches past 90 days', /<option value="(180|365)"/.test(page));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

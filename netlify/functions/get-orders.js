@@ -41,7 +41,17 @@ async function fetchOrders(since) {
       query: {
         filter: {
           date_time_filter: { created_at: { start_at: since.toISOString() } },
-          state_filter:     { states: ['OPEN', 'COMPLETED'] },
+          // 🚨 DRAFT IS INCLUDED, added 2026-08-20. Without it a DRAFT order is
+          // invisible in this dashboard entirely: v_dashboard_only_orders skips
+          // anything carrying a square_id, so Square is the ONLY route in — and
+          // this filter was closing it. FP-001004 (Leo the Den, $259, 21 May)
+          // sat that way for three months: the Finance tab flagged it as the
+          // one order awaiting payment while the Orders tab could not show it,
+          // so there was no way to mark it paid.
+          // ⚠️ Safe against migration 021's 19 unreal orders — the dashboard's
+          // CANCELED state is applied over whatever Square reports (see
+          // fetchCancelledSquareIds), so those still read as voided.
+          state_filter:     { states: ['OPEN', 'COMPLETED', 'DRAFT'] },
         },
         sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' },
       },
