@@ -632,6 +632,15 @@
   <div class="login-box">
     <h1>🔥 Forge Admin</h1>
     <p>Order dashboard — private access only</p>
+    <!-- 🔑 Offered, never forced. Hidden until the server confirms a passkey is
+         actually enrolled, so it can never sit there failing. The password below
+         always works — an auth shortcut that can strand you out of your own
+         dashboard is worse than typing a password. -->
+    <div id="faceid-login-row" style="display:none;margin-bottom:14px;">
+      <button id="faceid-login-btn" onclick="loginWithFaceId()"
+              style="width:100%;background:#1f1f1f;border:1px solid #FF6A00;color:#FF6A00;">🙂 Sign in with Face ID</button>
+      <div style="color:#555;font-size:0.72rem;margin-top:10px;">or use your password</div>
+    </div>
     <input id="pw-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')login()"/>
     <button onclick="login()">Enter Dashboard</button>
     <div id="login-error">Incorrect password</div>
@@ -666,6 +675,8 @@
            usually need it. -->
       <button class="btn btn-outline" id="sync-btn-always" onclick="runSync('sync-btn-always')"
               title="Pull orders and payments back from Square, over the window selected on the left">⟳ Sync from Square</button>
+      <button class="btn btn-outline" id="faceid-btn" style="display:none"
+              onclick="registerPasskey()" title="Use Face ID to sign in on this device instead of the password">🙂 Set up Face ID</button>
       <button class="btn btn-primary" onclick="exportCSV()">⬇ Export Pirate Ship CSV</button>
       <!-- Hidden until we know push is even possible here, so it never sits
            there looking broken in a browser that cannot do it. -->
@@ -1432,7 +1443,8 @@ async function login() {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard').style.display    = 'block';
       loadOrders();
-      initPush();   // needs the token, so only once we have one
+      initPush();          // needs the token, so only once we have one
+      initFaceIdSetup();   // enrolling must happen from a proven session
     } else {
       error.textContent   = 'Incorrect password';
       error.style.display = 'block';
@@ -1449,6 +1461,7 @@ function showLogin() {
   sessionStorage.removeItem('forge_admin_token');
   document.getElementById('dashboard').style.display    = 'none';
   document.getElementById('login-screen').style.display = 'flex';
+  offerFaceIdLogin();
 }
 
 // Auto-login if a token is present (validity is confirmed by the first API call).
@@ -1914,6 +1927,181 @@ async function togglePush() {
     showToast('Could not turn on notifications: ' + err.message);
   }
   renderPushBtn();
+}
+
+
+/* ── Face ID sign-in ────────────────────────────────────────────────────────
+   Frank: "log in to the app using my Face ID. So I don't have to enter the
+   password every time I click into the app."
+
+   This is WebAuthn. iOS keeps the private key in the Secure Enclave and only
+   signs after Face ID passes, so the phone proves who it is and no password
+   crosses the wire.
+
+   🔑 THE PASSWORD IS NOT REPLACED, only skipped on a device that has already
+   proved it once — registering a passkey requires a live admin session. If the
+   phone is lost, delete the device server-side and the password still works.
+
+   ⚠️ Face ID is offered but never forced. If it is unavailable, cancelled, or
+   fails, the password form is right there — an auth shortcut that can strand
+   you out of your own dashboard is worse than typing a password. */
+const WEBAUTHN_ENDPOINT = '/.netlify/functions/webauthn';
+
+const b64uToBuf = (s) => {
+  const pad = '='.repeat((4 - s.length % 4) % 4);
+  const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+};
+const bufToB64u = (b) => btoa(String.fromCharCode(...new Uint8Array(b)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/* 🔑 isSecureContext, not a protocol string check. WebAuthn requires a secure
+   context, and browsers count http://localhost as one — testing the protocol
+   directly would be both stricter than the spec and wrong on localhost. */
+const passkeysPossible = () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
+
+/* Offered on the LOGIN screen. Silent when nothing is enrolled or the browser
+   cannot do it — a button that fails is worse than no button. */
+async function offerFaceIdLogin() {
+  const holder = document.getElementById('faceid-login-row');
+  if (!holder || !passkeysPossible()) return;
+  try {
+    const res = await fetch(`${WEBAUTHN_ENDPOINT}?action=options&mode=login`);
+    const d = await res.json();
+    if (!d.available) return;
+    holder.style.display = '';
+    holder.dataset.challenge = d.challenge;
+    holder.dataset.allow = JSON.stringify(d.allowCredentials || []);
+    holder.dataset.rpid = d.rpId;
+  } catch { /* stay on the password form */ }
+}
+
+async function loginWithFaceId() {
+  const holder = document.getElementById('faceid-login-row');
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('faceid-login-btn');
+  if (!holder) return;
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Waiting for Face ID…'; btn.disabled = true; }
+  try {
+    // 🔑 A challenge is single-use, so the one fetched when the page loaded may
+    // already be spent (a failed attempt burns it). Always take a fresh one.
+    const fresh = await (await fetch(`${WEBAUTHN_ENDPOINT}?action=options&mode=login`)).json();
+    if (!fresh.available) throw new Error('No device is set up for Face ID');
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: b64uToBuf(fresh.challenge),
+        rpId: fresh.rpId,
+        allowCredentials: (fresh.allowCredentials || []).map(c => ({ type: 'public-key', id: b64uToBuf(c.id) })),
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    });
+    if (!assertion) throw new Error('cancelled');
+
+    const res = await fetch(WEBAUTHN_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'login',
+        credentialId: bufToB64u(assertion.rawId),
+        clientDataJSON: bufToB64u(assertion.response.clientDataJSON),
+        authenticatorData: bufToB64u(assertion.response.authenticatorData),
+        signature: bufToB64u(assertion.response.signature),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || !d.token) throw new Error('Face ID sign-in was refused');
+
+    sessionStorage.setItem('forge_admin_token', d.token);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    loadOrders();
+    initPush();
+    initFaceIdSetup();
+  } catch (e) {
+    // NotAllowedError is a cancel or a timeout — not worth an alarming message.
+    if (err && e.name !== 'NotAllowedError') {
+      err.textContent = e.message || 'Face ID sign-in failed — use your password';
+      err.style.display = 'block';
+    }
+  } finally {
+    if (btn) { btn.textContent = prev || '🙂 Sign in with Face ID'; btn.disabled = false; }
+  }
+}
+
+/* Shown INSIDE the dashboard, so enrolling always happens from a session that
+   already proved the password. */
+async function initFaceIdSetup() {
+  const btn = document.getElementById('faceid-btn');
+  if (!btn || !passkeysPossible()) return;
+  try {
+    const available = await (window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable
+      ? PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable() : Promise.resolve(false));
+    if (!available) return;   // no Face ID / Touch ID on this device
+    const d = await (await fetch(`${WEBAUTHN_ENDPOINT}?action=list`, {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    })).json();
+    const n = (d.devices || []).length;
+    btn.style.display = '';
+    btn.textContent = n ? `🙂 Face ID on (${n})` : '🙂 Set up Face ID';
+    btn.title = n ? 'Face ID is set up. Click to add this device too.' : 'Use Face ID to sign in on this device instead of the password';
+  } catch { /* leave it hidden */ }
+}
+
+async function registerPasskey() {
+  const btn = document.getElementById('faceid-btn');
+  const prev = btn.textContent;
+  btn.textContent = 'Waiting for Face ID…'; btn.disabled = true;
+  try {
+    const token = sessionStorage.getItem('forge_admin_token') || '';
+    const opts = await (await fetch(`${WEBAUTHN_ENDPOINT}?action=options&mode=register`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    })).json();
+    if (opts.error) throw new Error(opts.error);
+
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: b64uToBuf(opts.challenge),
+        rp: opts.rp,
+        user: { id: b64uToBuf(opts.user.id), name: opts.user.name, displayName: opts.user.displayName },
+        pubKeyCredParams: opts.pubKeyCredParams,
+        authenticatorSelection: opts.authenticatorSelection,
+        excludeCredentials: (opts.excludeCredentials || []).map(c => ({ type: 'public-key', id: b64uToBuf(c.id) })),
+        attestation: opts.attestation, timeout: opts.timeout,
+      },
+    });
+    if (!cred) throw new Error('cancelled');
+
+    // 🔑 getPublicKey() hands over SPKI DER directly, which is why nothing in
+    // this codebase has to decode CBOR or COSE. Safari 16+/iOS 16+ only.
+    const spki = cred.response.getPublicKey && cred.response.getPublicKey();
+    if (!spki) throw new Error('This browser is too old for Face ID sign-in');
+
+    const res = await fetch(WEBAUTHN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        action: 'register',
+        credentialId: bufToB64u(cred.rawId),
+        publicKey: bufToB64u(spki),
+        algorithm: cred.response.getPublicKeyAlgorithm ? cred.response.getPublicKeyAlgorithm() : -7,
+        clientDataJSON: bufToB64u(cred.response.clientDataJSON),
+        authenticatorData: cred.response.getAuthenticatorData
+          ? bufToB64u(cred.response.getAuthenticatorData()) : null,
+        label: /iP(hone|ad)/.test(navigator.userAgent) ? 'iPhone' : (navigator.platform || 'this device'),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Could not set up Face ID');
+    showToast('Face ID is set up — next time you open the app, just look at it');
+  } catch (e) {
+    if (e.name !== 'NotAllowedError') showToast('Face ID setup failed: ' + (e.message || e.name));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+    initFaceIdSetup();
+  }
 }
 
 async function setPaid(orderId, status) {
@@ -5008,7 +5196,8 @@ function showToast(msg) {
 }
 
 // Load on page visit if already logged in
-if (sessionStorage.getItem('forge_admin_token')) { loadOrders(); initPush(); }
+if (sessionStorage.getItem('forge_admin_token')) { loadOrders(); initPush(); initFaceIdSetup(); }
+else { offerFaceIdLogin(); }
 </script>
 </body>
 </html>
