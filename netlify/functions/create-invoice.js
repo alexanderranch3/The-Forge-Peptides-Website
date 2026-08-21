@@ -26,6 +26,8 @@
 const { syncOrder, rpc } = require('./_order-sync');
 const { consentText, CURRENT_VERSION } = require('./_sms-consent');
 const { invoiceModel, invoiceHtml, ownerNotificationHtml } = require('./_invoice');
+const push = require('./_push');
+const SUPABASE_KEY_FOR_PUSH = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const { checkAvailability, shortageMessage, checkFulfillable, blockedMessage } = require('./_stock');
 const { nameToId } = require('./_catalog-map');
 const { CATALOG } = require('./_catalog');
@@ -745,6 +747,86 @@ async function sendConfirmationEmail({ orderNum, customerName, customerEmail, cu
   });
 }
 
+// ── Push the order to Frank's phone ──────────────────────────────────────────
+// Added 2026-08-21. The email above already tells him, but email is not a thing
+// that taps you on the shoulder. His ask: "notifications when there's an order
+// placed directly to my phone, not a text but just a push notification. That
+// way, I can check the dashboard when I want to."
+//
+// 🚨 BEST-EFFORT, ALWAYS. Every failure here is caught and logged and NEVER
+// propagates. A customer's order must not fail because a notification could
+// not be delivered — the order is the business, the notification is a
+// convenience. Same reasoning as the email leg above it.
+//
+// 🔑 The payload carries the order NUMBER and TOTAL and nothing else. It is
+// encrypted end-to-end to the device, but it still passes through Apple's push
+// service, so there is no reason to put a customer's address or contact details
+// on that wire when the dashboard is one tap away.
+async function sendOwnerPush({ orderNum, customerName, order }) {
+  if (!push.configured()) return;
+
+  let subs;
+  try {
+    const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/push_subscriptions?select=id,endpoint,p256dh,auth`, {
+      headers: {
+        apikey: SUPABASE_KEY_FOR_PUSH,
+        Authorization: `Bearer ${SUPABASE_KEY_FOR_PUSH}`,
+      },
+    });
+    if (!res.ok) throw new Error(`Supabase ${res.status}`);
+    subs = await res.json();
+  } catch (err) {
+    console.error('PUSH: could not read subscriptions:', err.message);
+    return;
+  }
+  if (!Array.isArray(subs) || !subs.length) return; // nobody has turned it on
+
+  const total = money(order.total_money?.amount);
+  const payload = {
+    title: `New order ${orderNum}`,
+    body: `${customerName || 'Customer'} — ${total}`,
+    tag: `order-${orderNum}`,
+    orderNumber: orderNum,
+    url: '/admin.html',
+  };
+
+  const results = await Promise.all(subs.map((sub) => push.sendPush(sub, payload)));
+
+  // 🔑 A subscription the push service calls dead (404/410) is deleted rather
+  // than retried forever. Without this, one reinstalled phone leaves a row that
+  // fails on every order until someone notices.
+  await Promise.all(results.map(async (r, i) => {
+    const sub = subs[i];
+    try {
+      if (r.gone) {
+        await fetch(`${process.env.SUPABASE_URL}/rest/v1/push_subscriptions?id=eq.${sub.id}`, {
+          method: 'DELETE',
+          headers: { apikey: SUPABASE_KEY_FOR_PUSH, Authorization: `Bearer ${SUPABASE_KEY_FOR_PUSH}` },
+        });
+        console.warn(`PUSH: dropped dead subscription ${sub.id}`);
+        return;
+      }
+      await fetch(`${process.env.SUPABASE_URL}/rest/v1/push_subscriptions?id=eq.${sub.id}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPABASE_KEY_FOR_PUSH, Authorization: `Bearer ${SUPABASE_KEY_FOR_PUSH}`,
+          'Content-Type': 'application/json', Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(r.ok
+          ? { last_sent_at: new Date().toISOString(), failures: 0, last_error: null }
+          : { last_error: String(r.error || r.status).slice(0, 300) }),
+      });
+    } catch (bookErr) {
+      console.error('PUSH: bookkeeping failed:', bookErr.message);
+    }
+  }));
+
+  const sent = results.filter((r) => r.ok).length;
+  if (sent < results.length) {
+    console.error(`PUSH: ${sent}/${results.length} delivered for ${orderNum}`);
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 exports.handler = async (event) => {
@@ -922,6 +1004,14 @@ exports.handler = async (event) => {
       });
     } catch (mailErr) {
       console.error(`CONFIRMATION EMAIL FAILED for ${orderNum}:`, mailErr.message);
+    }
+
+    // The phone alert. Separate try/catch from the email on purpose: one
+    // failing must not stop the other, and neither may stop the order.
+    try {
+      await sendOwnerPush({ orderNum, customerName, order });
+    } catch (pushErr) {
+      console.error(`ORDER PUSH FAILED for ${orderNum}:`, pushErr.message);
     }
 
     return {

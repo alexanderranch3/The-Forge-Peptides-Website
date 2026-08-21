@@ -2,8 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>Forge Peptides — Order Dashboard</title>
+
+  <!-- ── Home Screen app ────────────────────────────────────────────────────
+       🔑 THE LOGO ON A PUSH BANNER COMES FROM HERE, not from the notification.
+       iOS ignores showNotification's `icon` entirely and draws the installed
+       app's icon instead, so apple-touch-icon IS the branding on every alert.
+       It is flattened onto the brand near-black on purpose: iOS renders any
+       transparency in a Home Screen icon as flat black, so leaving the logo's
+       alpha in would have meant an icon whose background was an accident
+       rather than a choice. (The manifest icons and the `icon` in admin-sw.js
+       are what Android and desktop Chrome use — both are set, so the logo
+       shows everywhere.)
+       ⚠️ Web Push on iOS only works once this page is ADDED TO THE HOME
+       SCREEN. In a normal Safari tab the prompt never appears. -->
+  <link rel="manifest" href="/admin-manifest.json"/>
+  <link rel="apple-touch-icon" href="/assets/admin-icon-192.png"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Forge Admin"/>
+  <meta name="theme-color" content="#0d0d0f"/>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0d0d0d; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
@@ -486,6 +505,10 @@
       <button class="btn btn-outline" id="sync-btn-always" onclick="runSync('sync-btn-always')"
               title="Pull orders and payments back from Square, over the window selected on the left">⟳ Sync from Square</button>
       <button class="btn btn-primary" onclick="exportCSV()">⬇ Export Pirate Ship CSV</button>
+      <!-- Hidden until we know push is even possible here, so it never sits
+           there looking broken in a browser that cannot do it. -->
+      <button class="btn btn-outline" id="push-btn" style="display:none"
+              onclick="togglePush()" title="Get a notification on this device when an order comes in">🔔 Notifications</button>
     </div>
   </div>
 
@@ -1247,6 +1270,7 @@ async function login() {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard').style.display    = 'block';
       loadOrders();
+      initPush();   // needs the token, so only once we have one
     } else {
       error.textContent   = 'Incorrect password';
       error.style.display = 'block';
@@ -1572,6 +1596,164 @@ async function setFulfillment(orderId, state) {
 // dashboard uuid to a Square lookup and got back 404 "Order not found" — every
 // time, on every order placed since the checkout cutover. It had never once
 // succeeded on a dashboard-only order.
+
+/* ── Push notifications on this device ──────────────────────────────────────
+   Frank's ask: "notifications when there's an order placed directly to my
+   phone, not a text but just a push notification. That way, I can check the
+   dashboard when I want to."
+
+   🚨 THE ONE CONSTRAINT THAT DECIDES EVERYTHING: on iOS, Web Push only works
+   for a page ADDED TO THE HOME SCREEN. In a normal Safari tab Notification
+   permission can never be granted, so the button explains that instead of
+   failing silently — "it doesn't work" with no reason is the worst outcome.
+
+   🔑 Permission is requested from the CLICK, never on load. Browsers reject a
+   permission request that is not tied to a user gesture, and iOS is strictest
+   about it. */
+const PUSH_ENDPOINT = '/.netlify/functions/save-push-subscription';
+let pushState = { supported: false, subscription: null, publicKey: null, configured: false };
+
+// A standalone PWA reports itself two different ways depending on platform.
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function initPush() {
+  const btn = document.getElementById('push-btn');
+  if (!btn) return;
+  pushState.supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+  // 🚨 On an iPhone in a browser TAB the APIs may look present but can never be
+  // granted. Say so plainly and point at the fix, rather than offering a button
+  // that cannot work.
+  if (isIOS() && !isStandalone()) {
+    btn.style.display = '';
+    btn.textContent = '🔔 Add to Home Screen first';
+    btn.onclick = () => alert(
+      'To get order notifications on an iPhone, this dashboard has to be added to your Home Screen first — '
+      + 'Apple only allows notifications for an installed app, not a Safari tab.\n\n'
+      + 'Tap the Share button, then "Add to Home Screen", then open Forge Admin from your Home Screen '
+      + 'and press this button again.'
+    );
+    return;
+  }
+  if (!pushState.supported) return; // nothing sensible to offer
+
+  try {
+    const reg = await navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin.html' });
+    await navigator.serviceWorker.ready;
+    pushState.subscription = await reg.pushManager.getSubscription();
+  } catch (err) {
+    console.warn('service worker registration failed', err);
+    return;
+  }
+
+  try {
+    const res = await fetch(PUSH_ENDPOINT, {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+    });
+    if (res.ok) {
+      const d = await res.json();
+      pushState.publicKey = d.publicKey;
+      pushState.configured = d.configured;
+    }
+  } catch { /* the button will say it is unavailable */ }
+
+  btn.style.display = '';
+  renderPushBtn();
+}
+
+function renderPushBtn() {
+  const btn = document.getElementById('push-btn');
+  if (!btn) return;
+  if (!pushState.configured) {
+    btn.textContent = '🔔 Notifications unavailable';
+    btn.title = 'VAPID keys are not configured on the server.';
+    return;
+  }
+  const on = !!pushState.subscription && Notification.permission === 'granted';
+  btn.textContent = on ? '🔔 Notifications on' : '🔔 Turn on notifications';
+  btn.title = on
+    ? 'This device gets a notification when an order comes in. Click to turn it off.'
+    : 'Get a notification on this device when an order comes in.';
+  btn.style.borderColor = on ? '#2e7d32' : '';
+  btn.style.color = on ? '#7bd88f' : '';
+}
+
+async function togglePush() {
+  const btn = document.getElementById('push-btn');
+  if (!pushState.configured) { showToast('Notifications are not configured on the server yet'); return; }
+
+  // ── Off ──
+  if (pushState.subscription) {
+    const endpoint = pushState.subscription.endpoint;
+    try {
+      await pushState.subscription.unsubscribe();
+      await fetch(PUSH_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+        body: JSON.stringify({ unsubscribe: true, endpoint }),
+      });
+      pushState.subscription = null;
+      showToast('Notifications off for this device');
+    } catch (err) {
+      showToast('Could not turn them off: ' + err.message);
+    }
+    renderPushBtn();
+    return;
+  }
+
+  // ── On ── requested straight from this click, which is what browsers require.
+  btn.textContent = '🔔 Asking…';
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast(perm === 'denied'
+        ? 'Notifications are blocked for this site — allow them in Settings, then try again'
+        : 'Notifications not enabled');
+      renderPushBtn();
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      // 🔑 Required, and required to be true. A push that shows no notification
+      // is treated as abuse and the OS eventually drops the subscription.
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(pushState.publicKey),
+    });
+    const json = sub.toJSON();
+    const res = await fetch(PUSH_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || '') },
+      body: JSON.stringify({
+        subscription: { endpoint: sub.endpoint, keys: json.keys },
+        label: isIOS() ? 'iPhone' : (navigator.platform || 'this device'),
+        userAgent: navigator.userAgent,
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || 'Could not save this device');
+    pushState.subscription = sub;
+    // The confirmation push is the proof. A green label that has never
+    // delivered anything is not evidence that notifications work.
+    showToast(d.testSent
+      ? 'Notifications on — a test notification is on its way'
+      : 'Notifications on — ⚠️ test push failed: ' + (d.testError || 'unknown'));
+  } catch (err) {
+    showToast('Could not turn on notifications: ' + err.message);
+  }
+  renderPushBtn();
+}
+
 async function setPaid(orderId, status) {
   const order = allOrders.find(o => o.orderId === orderId);
   if (!order) return;
@@ -4664,7 +4846,7 @@ function showToast(msg) {
 }
 
 // Load on page visit if already logged in
-if (sessionStorage.getItem('forge_admin_token')) loadOrders();
+if (sessionStorage.getItem('forge_admin_token')) { loadOrders(); initPush(); }
 </script>
 </body>
 </html>
