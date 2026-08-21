@@ -185,6 +185,168 @@
        modal is hidden, the modal stops being a fixed dark overlay, and the
        toolbar itself is dropped — a printed invoice with a Close button on it
        is not something you hand a customer. */
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       PHONE LAYOUT
+       Added 2026-08-21, after Frank installed the dashboard on his iPhone:
+       "it's kind of in the desktop setup, and it kind of looks very weird and
+       disproportionate. Trying to get all the information is a little bit
+       harder."
+
+       🚨 THE ACTUAL PROBLEM WAS THE ORDERS TABLE: nine columns, 941px wide,
+       inside a horizontal scroller on a 390px screen. Reading one order meant
+       swiping sideways and holding the first three columns in your head. No
+       amount of font tuning fixes that — a wide table is the wrong SHAPE for a
+       phone, so below 760px each row becomes a CARD instead. Nothing is hidden;
+       the same fields are simply stacked, with the order number and total on
+       the top line because those are what you scan for.
+
+       🔑 Everything here is inside a media query and changes no desktop pixel.
+       ═══════════════════════════════════════════════════════════════════════ */
+    @media (max-width: 760px) {
+
+      /* iOS inflates text in wide blocks unless told not to; that inflation is
+         a large part of what reads as "disproportionate". */
+      html { -webkit-text-size-adjust: 100%; }
+      body { padding: 0; }
+      .container, .dash-wrap { padding-left: 12px !important; padding-right: 12px !important; }
+
+      /* ── Header ── */
+      .dash-header { flex-direction: column; align-items: stretch; gap: 12px; }
+      .dash-header h1 { font-size: 1.25rem; }
+      .dash-header .meta { font-size: 0.75rem; }
+      #orders-controls { flex-wrap: wrap; gap: 8px !important; }
+      #orders-controls > * { flex: 1 1 calc(50% - 4px); min-width: 0; }
+      /* The two that matter most on a phone get a full row each. */
+      #orders-controls #days-select { flex: 1 1 100%; }
+      /* 🚨 NOT nowrap. "Export Pirate Ship CSV" is wider than half a 390px
+         screen, and nowrap clipped it to "Export Pirate Ship CS". A label you
+         cannot finish reading is worse than one on two lines. */
+      #orders-controls .btn {
+        white-space: normal; font-size: 0.78rem; line-height: 1.25;
+        padding: 10px 8px; min-height: 44px; overflow-wrap: anywhere;
+      }
+
+      /* ── Tabs: one swipeable strip rather than two ragged rows ── */
+      .tabs {
+        /* !important because the desktop rule sets wrap and would otherwise
+           leave two ragged rows of tabs instead of one swipeable strip. */
+        display: flex !important; flex-wrap: nowrap !important; overflow-x: auto; gap: 2px;
+        scrollbar-width: none; -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+      }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tabs .tab { flex: 0 0 auto; scroll-snap-align: start; font-size: 0.9rem; padding: 12px 14px; }
+
+      /* ── Stats: two up, tighter ── */
+      .stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+      .stat-card { padding: 12px !important; }
+      .stat-card .label, .stat-card .stat-label { font-size: 0.62rem !important; letter-spacing: .04em !important; }
+      .stat-card .value, .stat-card .stat-value { font-size: 1.25rem !important; }
+
+      /* ── Filters ── */
+      .filters, .filter-row { flex-direction: column; align-items: stretch; gap: 8px; }
+      .filter-select, .filters select, .filters input { width: 100% !important; }
+      /* 🔑 16px exactly. Any smaller and iOS zooms the whole page in when the
+         field is focused, and it never zooms back out. */
+      select, input, textarea { font-size: 16px !important; }
+
+      /* ══ THE ORDERS TABLE BECOMES CARDS ══ */
+      #orders-table .table-wrap, .table-wrap { overflow-x: visible; }
+      #orders-table { width: 100% !important; min-width: 0 !important; border-collapse: separate; border-spacing: 0; }
+      #orders-table thead { display: none; }
+      #orders-table tbody { display: block; }
+
+      #orders-table tbody tr {
+        display: flex; flex-wrap: wrap; align-items: baseline;
+        position: relative;
+        background: #141414; border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px; padding: 14px 14px 10px;
+        margin-bottom: 12px; gap: 2px 10px;
+      }
+      #orders-table tbody tr.voided { opacity: .55; }
+      #orders-table tbody td {
+        display: block; border: none !important; padding: 3px 0 !important;
+        flex: 1 1 100%; font-size: 0.9rem;
+      }
+
+      /* Label/value pairs for the middle rows. */
+      #orders-table tbody td[data-label]::before {
+        content: attr(data-label);
+        display: block; color: #666;
+        font-size: 0.62rem; letter-spacing: .08em; text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+
+      /* The top line: order number left, total right, both large. */
+      #orders-table td[data-cell="number"] {
+        order: 1; flex: 0 1 auto; font-size: 1.05rem !important;
+      }
+      #orders-table td[data-cell="total"] {
+        order: 2; flex: 0 0 auto; margin-left: auto; text-align: right;
+      }
+      #orders-table td[data-cell="number"]::before,
+      #orders-table td[data-cell="total"]::before { display: none; }
+      #orders-table td[data-cell="total"] .amount { font-size: 1.05rem; }
+
+      #orders-table td[data-cell="status"]   { order: 3; }
+      #orders-table td[data-cell="date"]     { order: 4; flex: 0 0 auto; }
+      #orders-table td[data-cell="customer"] { order: 5; }
+      #orders-table td[data-cell="shipto"]   { order: 6; }
+      /* 🔑 Most orders are pickup, and "SHIP TO — N/A" spends two lines saying
+         nothing. Hidden only when genuinely empty; a real address still shows. */
+      #orders-table td[data-cell="shipto"][data-empty] { display: none; }
+      #orders-table td[data-cell="items"]    { order: 7; }
+      #orders-table td[data-cell="actions"]  { order: 8; flex: 1 1 100%; padding-top: 10px !important; }
+
+      /* Status badges read better on their own line than crammed beside a date. */
+      #orders-table td[data-cell="status"] { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      #orders-table td[data-cell="status"]::before { flex: 1 1 100%; }
+      #orders-table td[data-cell="status"] .fulfillment { margin: 0; }
+
+      /* The checkbox goes to the corner so it stops occupying a whole line.
+         🔑 The total then needs its own gutter or the two overlap — they share
+         the top-right. Reserved on that cell alone rather than as padding on
+         the whole card, which would waste 44px on every other line too. */
+      #orders-table td[data-cell="check"] {
+        order: 0; position: absolute; top: 12px; right: 12px; flex: 0 0 auto; padding: 0 !important;
+      }
+      #orders-table td[data-cell="check"] .cb { width: 22px; height: 22px; }
+      /* Every checkbox, including "select all visible", which was 13px — too
+         small to hit reliably with a thumb. */
+      .cb, input[type="checkbox"] { width: 22px !important; height: 22px !important; }
+      label:has(> .cb), .select-all { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+      #orders-table td[data-cell="total"] { padding-right: 34px !important; }
+
+      /* 🔑 Actions are the reason this screen exists on a phone at all — Mark
+         Paid, Mark Ready, Invoice. Full-width, wrapped, and big enough to hit
+         with a thumb rather than a fingernail. */
+      #orders-table .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      #orders-table .actions .btn {
+        flex: 1 1 calc(50% - 4px); min-height: 44px; font-size: 0.82rem; padding: 10px 8px;
+      }
+
+      .items-list .item-line { font-size: 0.85rem; }
+      .addr-block { font-size: 0.8rem; white-space: normal; }
+
+      /* ── Every OTHER table still scrolls, but says so ── */
+      .table-wrap:not(#orders-wrap) {
+        overflow-x: auto; -webkit-overflow-scrolling: touch;
+      }
+
+      /* ── Modals: a phone has no room for a 900px dialog ── */
+      .modal-box, .modal-content, .sheet, .modal > div {
+        width: 100% !important; max-width: 100% !important;
+        max-height: 92vh !important; overflow-y: auto;
+        border-radius: 14px !important; padding: 16px !important;
+      }
+      .modal { padding: 8px !important; align-items: flex-end !important; }
+
+      /* Bottom breathing room so the last card clears the home indicator. */
+      #dashboard { padding-bottom: env(safe-area-inset-bottom, 0px); }
+      .tab-panel, #panel-orders { padding-bottom: 32px; }
+    }
+
     @media print {
       body.printing-invoice > *:not(#inv-modal) { display: none !important; }
       body.printing-invoice #inv-modal {
@@ -1411,10 +1573,10 @@ function renderTable() {
 
     return `
       <tr data-id="${esc(order.orderId)}" class="${order.status === 'CANCELED' ? 'voided' : ''}">
-        <td><input type="checkbox" class="cb order-cb" data-id="${esc(order.orderId)}"></td>
-        <td style="white-space:nowrap;color:#888;">${date}</td>
-        <td style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.orderNumber)}</td>
-        <td>${badge}${order.fulfillmentType === 'SHIP'
+        <td data-cell="check"><input type="checkbox" class="cb order-cb" data-id="${esc(order.orderId)}"></td>
+        <td data-cell="date" data-label="Date" style="white-space:nowrap;color:#888;">${date}</td>
+        <td data-cell="number" data-label="Order" style="color:#FF6A00;font-weight:700;white-space:nowrap;">${esc(order.orderNumber)}</td>
+        <td data-cell="status" data-label="Status">${badge}${order.fulfillmentType === 'SHIP'
           ? '<div class="fulfillment">🚚 Ship</div>'
           : '<div class="fulfillment">📦 Pickup</div>'}${
           // POS sales used to be dropped by get-orders entirely, which is how a
@@ -1436,8 +1598,8 @@ function renderTable() {
           // something is broken.
           order.dashboardOnly ? '<div class="fulfillment" style="color:#666">not in Square</div>' : ''
         }</td>
-        <td>${addr}</td>
-        <td>
+        <td data-cell="customer" data-label="Customer">${addr}</td>
+        <td data-cell="shipto" data-label="Ship to"${order.shipTo ? '' : ' data-empty="1"'}>
           ${order.shipTo ? `
             <div class="addr-block">${esc(addrOneLiner)}</div>
             ${order.shippingLabel
@@ -1445,8 +1607,8 @@ function renderTable() {
               : ''}
           ` : '<span style="color:#555">N/A</span>'}
         </td>
-        <td><div class="items-list">${items}</div></td>
-        <td>
+        <td data-cell="items" data-label="Items"><div class="items-list">${items}</div></td>
+        <td data-cell="total" data-label="Total">
           <div class="amount">$${order.total.toFixed(2)}</div>
           ${order.shippingAmount > 0
             ? `<div class="shipping-amt">Ship: $${order.shippingAmount.toFixed(2)}</div>` : ''}
@@ -1455,7 +1617,7 @@ function renderTable() {
           ${order.taxAmount > 0
             ? `<div class="shipping-amt" style="color:#aaa;">Tax: $${order.taxAmount.toFixed(2)}</div>` : ''}
         </td>
-        <td>
+        <td data-cell="actions">
           <div class="actions">
             ${order.status === 'PAID'
               ? `<button class="btn btn-sm btn-copy" onclick="setPaid('${esc(order.orderId)}','AWAITING_ZELLE')" title="Undo — mark this order unpaid again">Undo Paid</button>`
