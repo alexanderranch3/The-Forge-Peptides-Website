@@ -27,14 +27,57 @@
 // after the payment and syncs THAT, letting the tender arrive with the id every
 // future sync will match on.
 
+// 🚨 AND IT NOW HAS A DASHBOARD PATH — the whole second half of this file
+// (added 2026-08-20). Until then it talked ONLY to Square: its first act was a
+// Square GET on whatever get-orders put in `orderId`, which is
+// `square_id || order_id`. An order placed since ORDER_SOURCE=dashboard went
+// live has NO square_id, so Square was asked about a dashboard uuid it has
+// never heard of and the button returned 404 "Order not found" — every time,
+// for every dashboard-only order. Frank reported it as "when I give someone a
+// discount, or a comp, marking as paid gets rejected", but the discount was
+// incidental: a $250 Zelle order rung up at the counter failed identically.
+// set-fulfillment (022) and void-order (038) already learned this — there are
+// two kinds of order now and they are keyed differently.
+
 const { verifyToken } = require('./_auth-token');
-const { syncOrder, configured } = require('./_order-sync');
+const { syncOrder, configured, rpc } = require('./_order-sync');
 
 const SQUARE_API  = 'https://connect.squareup.com/v2';
 const TOKEN       = process.env.SQUARE_ACCESS_TOKEN;
 const LOCATION_ID = process.env.SQUARE_LOCATION_ID;
 
 const ALLOWED_STATUSES = ['AWAITING_ZELLE', 'PAID'];
+
+// A dashboard order is addressed by its own uuid, a Square order by Square's
+// id, which is not a uuid. The shape of the value tells them apart — the same
+// sniff void-order does, and the reason both can share one `orderId` field.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The dashboard leg. mark_order_paid (048) does the whole flip in one
+// transaction: it finds the order by whichever id it was given, refuses a
+// voided one, records the tender when there is money to record, and
+// auto-classifies a free order as COMP or INTERNAL.
+async function markInDashboard({ orderId, orderNumber, status }) {
+  return rpc('mark_order_paid', {
+    p: {
+      order_id:  orderId && UUID_RE.test(orderId) ? orderId : null,
+      square_id: orderId && !UUID_RE.test(orderId) ? orderId : null,
+      order_no:  orderNumber || null,
+      status,
+      tender_note: 'Zelle',
+    },
+  });
+}
+
+// What the toast should say when an order turned out to be free. Frank asked
+// for this directly: "automatically enter it as comp or internal on my account
+// if I place an order like that on my account."
+function reclassNote(r) {
+  if (!r || !r.reclassified) return null;
+  return r.purpose === 'INTERNAL'
+    ? 'booked as an internal order, not a sale — it was free, so it stays off revenue'
+    : 'booked as a comp, not a sale — it was free, so it stays off revenue';
+}
 
 function squareHeaders() {
   return {
@@ -63,20 +106,64 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
-  if (!TOKEN || !LOCATION_ID) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Missing Square env vars.' }) };
-  }
-
   let body;
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const { orderId, status } = body;
-  if (!orderId || !ALLOWED_STATUSES.includes(status)) {
+  const orderId    = typeof body.orderId === 'string' ? body.orderId.trim() : '';
+  const orderNumber = typeof body.orderNumber === 'string' ? body.orderNumber.trim() : '';
+  const status     = body.status;
+  if ((!orderId && !orderNumber) || !ALLOWED_STATUSES.includes(status)) {
     return {
       statusCode: 400, headers,
-      body: JSON.stringify({ error: `orderId required; status must be one of ${ALLOWED_STATUSES.join(', ')}` }),
+      body: JSON.stringify({ error: `orderId or orderNumber required; status must be one of ${ALLOWED_STATUSES.join(', ')}` }),
     };
+  }
+
+  // ── Which system owns this order? ──────────────────────────────────────────
+  // 🔑 Anything Square has no record of is settled here and here only. Sending
+  // it to Square is what the 404 was.
+  const dashboardOnly = !orderId || UUID_RE.test(orderId);
+
+  if (dashboardOnly) {
+    if (!configured()) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Supabase is not configured.' }) };
+    }
+    try {
+      const r = await markInDashboard({ orderId, orderNumber, status });
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          success: true,
+          orderId: r.order_id,
+          orderNumber: r.order_no || orderNumber || '',
+          status,
+          // 🔑 A free order gets NO tender, and that is correct, not a failure.
+          // 037 settled it: purpose already keeps COMP and INTERNAL out of
+          // v_product_sales, so writing a tender for one would be inventing
+          // income. Reporting `tenderRecorded: true` keeps the page's warning
+          // for what it is actually about — money that went missing.
+          tenderRecorded: true,
+          tenderNote: null,
+          // It is true HERE by construction: this WAS the dashboard write.
+          dashboardSynced: true,
+          dashboardNote: reclassNote(r),
+          purpose: r.purpose,
+          reclassified: Boolean(r.reclassified),
+          // Nothing was sent to Square, and the page says so rather than
+          // implying an order exists there that does not.
+          squareSynced: false,
+        }),
+      };
+    } catch (err) {
+      console.error('set-order-status dashboard path:', err.message);
+      const notFound = /Order not found/i.test(err.message);
+      return { statusCode: notFound ? 404 : 500, headers, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
+  if (!TOKEN || !LOCATION_ID) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Missing Square env vars.' }) };
   }
 
   try {
@@ -190,6 +277,7 @@ exports.handler = async (event) => {
     // being briefly behind is recoverable, being wrong is not.
     let dashboardSynced = false;
     let dashboardNote   = null;
+    let reclassified    = false;
 
     if (configured()) {
       try {
@@ -206,6 +294,33 @@ exports.handler = async (event) => {
           const freshHasTender = Array.isArray(freshData.order.tenders) && freshData.order.tenders.length > 0;
           if (status === 'PAID' && tenderRecorded && !freshHasTender) {
             dashboardNote = 'Square has not attached the payment to the order yet — press Sync in a moment.';
+          }
+
+          // ── The free-order hole, closed on this path too ──────────────────
+          // `due > 0` above means a $0 order is marked paid with NO tender. As
+          // a SALE that is the worst of both worlds: v_product_sales needs a
+          // tender so the order vanishes from revenue, while its real COGS
+          // still lands — a phantom loss. (Three of those are on the books
+          // right now: FP-001155/156/157.) Classifying it is the fix, not a $0
+          // tender, which would invent income.
+          //
+          // 🚨 GATED ON $0, AND THAT GATE IS LOAD-BEARING. mark_order_paid
+          // writes a tender when purpose is SALE and total > 0 — so calling it
+          // on a PAID order whose payment Square has not yet attached would
+          // write a dashboard tender with no Square id, and the next re-sync
+          // would add the real one alongside it. The same money, twice, in the
+          // books — the exact trap named at the top of this file. At $0 the
+          // function cannot write a tender at all, so the guarantee is
+          // arithmetic rather than discipline.
+          const total = freshData.order.total_money?.amount ?? 0;
+          if (status === 'PAID' && total === 0) {
+            try {
+              const r = await markInDashboard({ orderId, orderNumber, status });
+              reclassified = Boolean(r.reclassified);
+              if (reclassified) dashboardNote = reclassNote(r);
+            } catch (classErr) {
+              console.error(`FREE ORDER NOT CLASSIFIED for ${orderId}:`, classErr.message);
+            }
           }
         } else {
           dashboardNote = 'Could not re-read the order from Square; the dashboard will catch up on the next sync.';
@@ -227,6 +342,8 @@ exports.handler = async (event) => {
         // So the page can say whether this is true HERE, not just in Square.
         dashboardSynced,
         dashboardNote,
+        reclassified,
+        squareSynced: true,
         orderNumber: updData.order.metadata?.forge_order_number || updData.order.reference_id || '',
       }),
     };

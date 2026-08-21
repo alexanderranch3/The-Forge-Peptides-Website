@@ -1565,7 +1565,13 @@ async function setFulfillment(orderId, state) {
 // Writes the Zelle payment flag onto the Square order's metadata via
 // set-order-status.js. Square invoices used to carry this; the account was
 // deactivated 2026-08-12 so the flag lives on the order now.
-// Updates the row optimistically, then rolls back if Square rejects it.
+// Updates the row optimistically, then rolls back if the server rejects it.
+//
+// 🚨 SENDS orderNumber FOR AN ORDER SQUARE HAS NEVER HEARD OF, exactly as
+// setFulfillment and voidOrder above already do. Without this the button sent a
+// dashboard uuid to a Square lookup and got back 404 "Order not found" — every
+// time, on every order placed since the checkout cutover. It had never once
+// succeeded on a dashboard-only order.
 async function setPaid(orderId, status) {
   const order = allOrders.find(o => o.orderId === orderId);
   if (!order) return;
@@ -1582,7 +1588,9 @@ async function setPaid(orderId, status) {
         'Content-Type':  'application/json',
         'Authorization': 'Bearer ' + (sessionStorage.getItem('forge_admin_token') || ''),
       },
-      body: JSON.stringify({ orderId, status }),
+      body: order.dashboardOnly
+        ? JSON.stringify({ orderNumber: order.orderNumber, status })
+        : JSON.stringify({ orderId, status }),
     });
 
     if (res.status === 401) { showLogin(); return; }
@@ -1597,22 +1605,36 @@ async function setPaid(orderId, status) {
     // AND pushes the result into this dashboard — and either can fail on its
     // own. A silent "done" that left the money out of revenue until someone
     // pressed Sync is exactly how FP-001004 sat unpaid for three months.
+    // 🔑 A free order is RECLASSIFIED rather than paid, and saying so is the
+    // point — Frank asked for it ("automatically enter it as comp or internal
+    // on my account"), and a comp silently labelled a $0 SALE reads as a loss
+    // on the Finance tab. `dashboardNote` carries the plain-English reason.
     const who = order.orderNumber || 'Order';
     if (status === 'PAID') {
+      // 🚨 Only ever say "and in Square" when it actually went to Square. A
+      // counter sale exists here alone, and telling Frank to look for it in a
+      // deactivated Square account is how an hour goes missing.
+      const where = data.squareSynced === false ? 'in the books here' : 'in the books here and in Square';
       if (!data.tenderRecorded) {
         showToast(`${who} marked paid — ⚠️ payment NOT recorded in Square, add it manually`);
+      } else if (data.reclassified) {
+        showToast(`${who} — ${data.dashboardNote}`);
       } else if (data.dashboardNote) {
         showToast(`${who} marked paid — ⚠️ ${data.dashboardNote}`);
       } else {
-        showToast(`${who} marked paid — in the books here and in Square`);
+        showToast(`${who} marked paid — ${where}`);
       }
+      // A reclassified order changes purpose, so it moves in and out of the
+      // sales views — the Orders tab must re-read rather than trust the
+      // optimistic row.
+      if (data.reclassified) loadOrders();
     } else {
       showToast(`${who} back to awaiting Zelle`);
     }
     // Revenue and margins just moved, so anything reading them is stale.
     if (data.dashboardSynced) { finLoaded = false; invLoaded = false; }
   } catch (err) {
-    order.status = previous; // Square didn't take it — put the row back
+    order.status = previous; // it was refused — put the row back
     updateStats();
     renderTable();
     showToast('Could not update: ' + err.message);

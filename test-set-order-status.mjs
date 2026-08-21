@@ -103,12 +103,27 @@ global.fetch = async (url, opts = {}) => {
   if (u.includes('/rpc/sync_square_order')) {
     return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }), json: async () => ({ ok: true }) };
   }
+  // The dashboard leg — mark_order_paid (migration 048). `rpcResult` stands in
+  // for what the function decided, so the branches the page depends on
+  // (reclassified / not) can each be exercised.
+  if (u.includes('/rpc/mark_order_paid')) {
+    rpcCalls.push(JSON.parse(opts.body).p);
+    if (rpcResult instanceof Error) {
+      return { ok: false, status: 400,
+               text: async () => JSON.stringify({ message: rpcResult.message }) };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify(rpcResult) };
+  }
   return { ok: false, status: 404, json: async () => ({}), text: async () => '{}' };
 };
+
+let rpcCalls = [];
+let rpcResult = null;
 
 const reset = () => {
   calls = []; getCount = 0; orderHasTender = false;
   paymentSucceeds = true; refetchSucceeds = true; attachesImmediately = true;
+  rpcCalls = []; rpcResult = null;
 };
 const mark = (status) => setStatus.handler({
   httpMethod: 'POST', headers: auth, body: JSON.stringify({ orderId: ORDER_ID, status }),
@@ -194,6 +209,92 @@ res = await mark('AWAITING_ZELLE');
 ok('409', res.statusCode, 409);
 okTrue('and it says to void it in Square', /void|refund/i.test(JSON.parse(res.body).error));
 okTrue('nothing was synced', !syncCall());
+
+// ── The dashboard path ───────────────────────────────────────────────────────
+// 🚨 THE BUG THIS WHOLE SECTION EXISTS FOR. This endpoint used to do a Square
+// GET on whatever it was handed, and get-orders hands it `square_id ||
+// order_id`. An order rung up here has no square_id, so Square was asked about
+// a dashboard uuid and answered 404 "Order not found" — every time. The button
+// had never once succeeded on a dashboard-only order.
+const DASH_UUID = '4e1d94c0-416e-476c-8716-e44120ef7181';   // FP-001177, the live stuck one
+const markDash = (payload) => setStatus.handler({
+  httpMethod: 'POST', headers: auth, body: JSON.stringify(payload),
+});
+const touchedSquare = () => calls.some((c) => c.url.includes('connect.squareup.com'));
+
+console.log('\n— 🚨 an order Square has never heard of no longer 404s —');
+reset();
+rpcResult = { order_id: DASH_UUID, order_no: 'FP-001177', payment_state: 'PAID',
+              purpose: 'COMP', reclassified: true, previous_purpose: 'SALE',
+              tender_recorded: false, tender_written: false, total_cents: 0 };
+res = await markDash({ orderNumber: 'FP-001177', status: 'PAID' });
+body = JSON.parse(res.body);
+ok('200, where it used to be 404', res.statusCode, 200);
+ok('success', body.success, true);
+okTrue('🚨 and SQUARE WAS NEVER CALLED — that call was the bug', !touchedSquare());
+ok('the dashboard function was', rpcCalls.length, 1);
+ok('addressed by order number', rpcCalls[0].order_no, 'FP-001177');
+okTrue('with no id invented for it', rpcCalls[0].order_id === null && rpcCalls[0].square_id === null);
+ok('and it is true HERE, by construction', body.dashboardSynced, true);
+ok('🚨 while saying plainly it is NOT in Square', body.squareSynced, false);
+
+console.log('\n— 🔑 a free order comes back classified, and says so —');
+ok('as a comp', body.purpose, 'COMP');
+ok('flagged for the page', body.reclassified, true);
+okTrue('in plain English', /comp/i.test(body.dashboardNote || ''));
+okTrue('that says why it is off revenue', /off revenue|not a sale/i.test(body.dashboardNote || ''));
+// 🚨 A free order gets NO tender and that is CORRECT, not a failure — 037
+// settled it: purpose already keeps COMP and INTERNAL out of v_product_sales,
+// so a $0 tender would be inventing income. The page's tenderRecorded warning
+// is about money that went MISSING, and must not fire here.
+ok('🚨 and the page is NOT warned about a missing payment', body.tenderRecorded, true);
+
+console.log('\n— a dashboard uuid routes here too, not to Square —');
+reset();
+rpcResult = { order_id: DASH_UUID, order_no: 'FP-001177', payment_state: 'PAID',
+              purpose: 'SALE', reclassified: false, tender_recorded: true,
+              tender_written: true, total_cents: 25000 };
+res = await markDash({ orderId: DASH_UUID, status: 'PAID' });
+body = JSON.parse(res.body);
+ok('200', res.statusCode, 200);
+okTrue('🚨 Square untouched', !touchedSquare());
+ok('matched on the uuid', rpcCalls[0].order_id, DASH_UUID);
+okTrue('and NOT offered to Square as a square_id', rpcCalls[0].square_id === null);
+ok('a real counter sale stays a SALE', body.purpose, 'SALE');
+ok('nothing reclassified', body.reclassified, false);
+ok('and the $250 is on the books', body.tenderRecorded, true);
+
+console.log('\n— a Square id still goes to Square —');
+reset();
+res = await mark('PAID');
+okTrue('Square was called', touchedSquare());
+ok('and the dashboard RPC was not', rpcCalls.length, 0);
+
+console.log('\n— the dashboard function\'s refusals reach the screen —');
+reset();
+rpcResult = new Error('Order not found');
+res = await markDash({ orderNumber: 'FP-999999', status: 'PAID' });
+ok('404 for an order that is not there', res.statusCode, 404);
+okTrue('and says so', /not found/i.test(JSON.parse(res.body).error));
+reset();
+rpcResult = new Error('$250.00 is recorded as received on FP-001177. Void or refund it first — a payment cannot be undone from here.');
+res = await markDash({ orderNumber: 'FP-001177', status: 'AWAITING_ZELLE' });
+okTrue('un-marking is refused once money is recorded', res.statusCode >= 400);
+okTrue('naming the amount', /\$250\.00/.test(JSON.parse(res.body).error));
+
+console.log('\n— 🚨 a $0 SQUARE order is classified too, but ONLY at $0 —');
+// `due > 0` means a free Square order is marked paid with no tender: as a SALE
+// it drops out of v_product_sales while its real COGS still lands — a phantom
+// loss. Classifying it is the fix. The $0 gate is load-bearing: at any other
+// amount mark_order_paid could write a dashboard tender with no Square id
+// while Square's real one is still pending, and the next sync would add that
+// one alongside — the same money twice.
+reset();
+rpcResult = { order_id: 'x', order_no: 'FP-001004', payment_state: 'PAID',
+              purpose: 'INTERNAL', reclassified: true, tender_written: false, total_cents: 0 };
+res = await mark('PAID');
+ok('a $259 Square order is NOT sent to the classifier', rpcCalls.length, 0);
+ok('and is not reclassified', JSON.parse(res.body).reclassified, false);
 
 console.log('\n— refusals —');
 ok('no token', (await setStatus.handler({ httpMethod: 'POST', headers: {}, body: '{}' })).statusCode, 401);
